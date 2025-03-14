@@ -1,3 +1,5 @@
+#![allow(clippy::unit_arg)]
+
 use anyhow::{Context, Result};
 
 pub mod run;
