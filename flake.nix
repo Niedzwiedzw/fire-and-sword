@@ -37,6 +37,51 @@
                 # for extracting images
                 #
                 poppler_utils
+                # copied from wgpu repo
+                # necessary for building wgpu in 3rd party packages (in most cases)
+                libxkbcommon
+                wayland
+                xorg.libX11
+                xorg.libXcursor
+                xorg.libXrandr
+                xorg.libXi
+                alsa-lib
+                libGL
+                libxkbcommon
+                wayland
+                fontconfig
+                freetype
+                shaderc
+                directx-shader-compiler
+                pkg-config
+                cmake
+                mold # could use any linker, needed for rustix (but mold is fast)
+
+                libGL
+                vulkan-headers
+                vulkan-loader
+                vulkan-tools
+                vulkan-tools-lunarg
+                vulkan-extension-layer
+                vulkan-validation-layers # don't need them *strictly* but immensely helpful
+
+                # necessary for developing (all of) wgpu itself
+                cargo-nextest
+                cargo-fuzz
+
+                # nice for developing wgpu itself
+                typos
+
+                # if you don't already have rust installed through other means,
+                # this shell.nix can do that for you with this below
+                yq # for tomlq below
+
+                # nice tools
+                gdb
+                rr
+                evcxr
+                valgrind
+                renderdoc
                 (rust-bin
                   .selectLatestNightlyWith (toolchain:
                     toolchain
@@ -52,6 +97,11 @@
 
             shellHook = ''
             '';
+            LD_LIBRARY_PATH = lib.makeLibraryPath [
+              libGL
+              libxkbcommon
+              wayland
+            ];
           };
         }
     );
