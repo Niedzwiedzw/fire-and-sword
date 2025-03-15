@@ -3,6 +3,7 @@ use {
     anyhow::{Context, Result},
     tokio_stream::StreamExt,
     tracing::{instrument, warn},
+    wgpu::Color,
     winit::{
         event::{ElementState, KeyEvent, WindowEvent},
         keyboard::{KeyCode, PhysicalKey},
@@ -18,7 +19,7 @@ pub mod rendering {
         itertools::Itertools,
         std::iter::once,
         tap::prelude::*,
-        wgpu::CommandEncoder,
+        wgpu::{Color, CommandEncoder},
         winit::{dpi::PhysicalSize, window::Window},
     };
 
@@ -121,7 +122,7 @@ pub mod rendering {
                 .with_context(|| format!("running on encoder: {label}"))
         }
         pub fn update(&mut self) {}
-        pub fn render(&mut self) -> Result<()> {
+        pub fn render(&mut self, color: &Color) -> Result<()> {
             self.surface
                 .get_current_texture()
                 .context("getting current texture")
@@ -139,12 +140,7 @@ pub mod rendering {
                                             resolve_target: None,
                                             ops: wgpu::Operations {
                                                 store: wgpu::StoreOp::Store,
-                                                load: wgpu::LoadOp::Clear(wgpu::Color {
-                                                    r: 0.1,
-                                                    g: 0.2,
-                                                    b: 0.3,
-                                                    a: 1.0,
-                                                }),
+                                                load: wgpu::LoadOp::Clear(*color),
                                             },
                                         })],
                                         depth_stencil_attachment: None,
@@ -173,6 +169,8 @@ pub async fn run() -> Result<()> {
         .await
         .context("creating renderer state")?;
 
+    let mut clear_color = Color::BLACK;
+
     while let Some(event) = events.next().await {
         match event {
             window::WindowingEvent::Winit(window_event) => match window_event {
@@ -186,11 +184,16 @@ pub async fn run() -> Result<()> {
                         },
                     ..
                 } => std::process::exit(0),
+                WindowEvent::PointerMoved { position, .. } => {
+                    let size = window.surface_size();
+                    clear_color.r = position.x / size.width as f64;
+                    clear_color.g = position.y / size.height as f64;
+                }
                 WindowEvent::RedrawRequested => {
                     state.window.request_redraw();
                     state.update();
                     state
-                        .render()
+                        .render(&clear_color)
                         .context("rendering failed")
                         .or_else(|reason| match reason {
                             reason if format!("{reason:?}").contains("timeout") => {
