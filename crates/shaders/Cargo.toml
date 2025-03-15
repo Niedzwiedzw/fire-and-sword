@@ -1,0 +1,17 @@
+cargo-features = ["edition2024"]
+
+[package]
+name = "shaders"
+edition = "2024"
+
+[lib]
+crate-type = ["dylib"]
+
+[lints.rust]
+unexpected_cfgs = { level = "allow", check-cfg = [
+  'cfg(target_arch, values("spirv"))',
+] }
+
+[dependencies]
+spirv-std = { git = "https://github.com/Rust-GPU/rust-gpu" }
+glam = { version = ">=0.22, <=0.29", default-features = false }

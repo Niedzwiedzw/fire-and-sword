@@ -32,6 +32,7 @@
                 tinymist
                 typst
                 typstyle
+                rustup
                 # it actually doesn't work, you need to install it globally
                 lato
                 # for extracting images
