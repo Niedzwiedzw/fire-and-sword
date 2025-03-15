@@ -15,6 +15,10 @@ edition = "2021"
 
 
 [workspace.dependencies]
+# internal
+shader-types.path = "crates/shader-types"
+
+# external
 anyhow = { version = "1.0" }
 clap = { version = "4.5.32", features = ["derive", "cargo", "env"] }
 derive_more = { version = "2.0.1", features = ["full"] }
@@ -26,7 +30,7 @@ tokio = { version = "1.44", features = ["full"] }
 tokio-stream = { version = "0.1.17", features = ["full"] }
 tracing = { version = "0.1" }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-wgpu = { version = "24.0" }
+wgpu = { version = "24.0", features = ["spirv"] }
 winit = { git = "https://github.com/rust-windowing/winit", rev = "ae28eea406d16cb991f95eeff2df4278c250f4fe" }
 glam = { version = ">=0.22, <=0.29", default-features = false }
 
