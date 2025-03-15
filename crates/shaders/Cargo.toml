@@ -1,8 +1,6 @@
-cargo-features = ["edition2024"]
-
 [package]
 name = "shaders"
-edition = "2024"
+edition = "2021"
 
 [lib]
 crate-type = ["dylib"]

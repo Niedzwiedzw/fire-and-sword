@@ -6,5 +6,10 @@ repository.workspace = true
 categories.workspace = true
 edition.workspace = true
 
-[dependencies]
-glam.workspace = true
+[target.'cfg(target_arch = "spirv")'.dependencies]
+glam = { workspace = true, features = ["libm"] }
+num-traits = { workspace = true, features = ["libm"] }
+
+[target.'cfg(not(target_arch = "spirv"))'.dependencies]
+glam = { workspace = true, default-features = true }
+num-traits = { workspace = true, default-features = true }

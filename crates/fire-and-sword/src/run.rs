@@ -3,7 +3,6 @@ use {
     anyhow::{Context, Result},
     tokio_stream::StreamExt,
     tracing::{instrument, warn},
-    wgpu::Color,
     winit::{
         event::{ElementState, KeyEvent, WindowEvent},
         keyboard::{KeyCode, PhysicalKey},
@@ -93,10 +92,7 @@ pub mod rendering {
                 .context("requesting device and queue")?;
 
             // building the pipeline
-            let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-                label: Some("shader.spv"),
-                source: wgpu::ShaderSource::SpirV(shader_types::SHADERS.into()),
-            });
+            let shader = device.create_shader_module(wgpu::include_spirv!("../../../shaders.spv"));
 
             let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
@@ -176,7 +172,7 @@ pub mod rendering {
                 .with_context(|| format!("running on encoder: {label}"))
         }
         pub fn update(&mut self) {}
-        pub fn render(&mut self, color: &Color) -> Result<()> {
+        pub fn render(&mut self) -> Result<()> {
             self.surface
                 .get_current_texture()
                 .context("getting current texture")
@@ -194,12 +190,21 @@ pub mod rendering {
                                             resolve_target: None,
                                             ops: wgpu::Operations {
                                                 store: wgpu::StoreOp::Store,
-                                                load: wgpu::LoadOp::Clear(*color),
+                                                load: wgpu::LoadOp::Clear(Color {
+                                                    r: 0.1,
+                                                    g: 0.2,
+                                                    b: 0.3,
+                                                    a: 1.0,
+                                                }),
                                             },
                                         })],
                                         depth_stencil_attachment: None,
                                         timestamp_writes: None,
                                         occlusion_query_set: None,
+                                    })
+                                    .tap_mut(|pass| {
+                                        pass.set_pipeline(&self.render_pipeline);
+                                        pass.draw(0..3, 0..1);
                                     })
                                     .pipe(drop)
                                     .pipe(Ok)
@@ -223,8 +228,6 @@ pub async fn run() -> Result<()> {
         .await
         .context("creating renderer state")?;
 
-    let mut clear_color = Color::BLACK;
-
     while let Some(event) = events.next().await {
         match event {
             window::WindowingEvent::Winit(window_event) => match window_event {
@@ -238,16 +241,11 @@ pub async fn run() -> Result<()> {
                         },
                     ..
                 } => std::process::exit(0),
-                WindowEvent::PointerMoved { position, .. } => {
-                    let size = window.surface_size();
-                    clear_color.r = position.x / size.width as f64;
-                    clear_color.g = position.y / size.height as f64;
-                }
                 WindowEvent::RedrawRequested => {
                     state.window.request_redraw();
                     state.update();
                     state
-                        .render(&clear_color)
+                        .render()
                         .context("rendering failed")
                         .or_else(|reason| match reason {
                             reason if format!("{reason:?}").contains("timeout") => {
