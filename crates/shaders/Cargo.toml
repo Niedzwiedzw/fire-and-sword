@@ -12,4 +12,8 @@ unexpected_cfgs = { level = "allow", check-cfg = [
 
 [dependencies]
 spirv-std = { git = "https://github.com/Rust-GPU/rust-gpu" }
-glam = { version = ">=0.22, <=0.29", default-features = false }
+glam = { version = ">=0.22, <=0.29", default-features = false, features = [
+  "bytemuck",
+] }
+shader-types.path = "../shader-types"
+bytemuck = "1.22"
