@@ -5,7 +5,9 @@ default:
 
 # rebuilds shaders, run setup-shader-compiler once before starting development
 rebuild-shaders:
-    cargo gpu build --shader-crate ./crates/shaders/
+    cargo gpu build \
+        --shader-crate ./crates/shaders/ \
+        --capability Int8
 
 # only needs to be done once
 setup-shader-compiler:

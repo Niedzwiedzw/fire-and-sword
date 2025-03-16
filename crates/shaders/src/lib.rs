@@ -1,13 +1,12 @@
 #![cfg_attr(target_arch = "spirv", no_std)]
 // HACK(eddyb) can't easily see warnings otherwise from `spirv-builder` builds.
-// #![deny(warnings)]
+#![deny(warnings)]
 
 #[cfg(target_arch = "spirv")]
 #[allow(unused_imports)]
 use spirv_std::num_traits::Float;
 use {
-    core::mem::size_of,
-    shader_types::{tap::prelude::*, FromBufferAtIndex, Vertex},
+    shader_types::Vertex,
     spirv_std::{
         glam::{vec4, Vec4},
         spirv,

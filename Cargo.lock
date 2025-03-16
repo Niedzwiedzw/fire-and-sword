@@ -740,6 +740,7 @@ version = "0.29.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dc46dd3ec48fdd8e693a98d2b8bafae273a2d54c1de02a2a7e3d57d501f39677"
 dependencies = [
+ "bytemuck",
  "libm",
 ]
 
@@ -1610,15 +1611,20 @@ dependencies = [
 name = "shader-types"
 version = "0.1.0"
 dependencies = [
+ "bytemuck",
+ "derive_more",
  "glam",
  "num-traits",
+ "tap",
 ]
 
 [[package]]
 name = "shaders"
 version = "0.0.0"
 dependencies = [
+ "bytemuck",
  "glam",
+ "shader-types",
  "spirv-std",
 ]
 
