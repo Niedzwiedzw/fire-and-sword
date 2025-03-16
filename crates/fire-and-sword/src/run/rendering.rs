@@ -1,10 +1,12 @@
 use {
     super::VERTICES,
+    crate::run::INDICES,
     anyhow::{Context, Result},
     itertools::Itertools,
     shader_types::bytemuck,
     std::iter::once,
     tap::prelude::*,
+    tracing::info,
     wgpu::{util::DeviceExt, Color, CommandEncoder},
     winit::{dpi::PhysicalSize, window::Window},
 };
@@ -19,6 +21,7 @@ pub struct State<'a> {
     pub render_pipeline: wgpu::RenderPipeline,
     pub vertex_buffer: wgpu::Buffer,
     pub bind_group: wgpu::BindGroup,
+    index_buffer: wgpu::Buffer,
 }
 
 impl<'a> State<'a> {
@@ -135,13 +138,15 @@ impl<'a> State<'a> {
                     )
             })
             .context("loading happy little tree")?;
+        info!("loaded happy tree");
+
         let diffuse_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("diffuse_sampler"),
             address_mode_u: wgpu::AddressMode::ClampToEdge,
             address_mode_v: wgpu::AddressMode::ClampToEdge,
             address_mode_w: wgpu::AddressMode::ClampToEdge,
             mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Linear,
             mipmap_filter: wgpu::FilterMode::Nearest,
             ..Default::default()
         });
@@ -157,6 +162,12 @@ impl<'a> State<'a> {
                 usage: wgpu::BufferUsages::STORAGE,
             })
         };
+
+        let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Index buffer"),
+            contents: bytemuck::cast_slice(INDICES),
+            usage: wgpu::BufferUsages::INDEX,
+        });
 
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("Vertex Bind Group Layout"),
@@ -267,6 +278,7 @@ impl<'a> State<'a> {
             window,
             render_pipeline,
             vertex_buffer,
+            index_buffer,
             bind_group,
         })
     }
@@ -326,7 +338,8 @@ impl<'a> State<'a> {
                                 .tap_mut(|pass| {
                                     pass.set_pipeline(&self.render_pipeline);
                                     pass.set_bind_group(0, &self.bind_group, &[]);
-                                    pass.draw(0..VERTICES.len() as _, 0..1);
+                                    pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+                                    pass.draw_indexed(0..INDICES.len() as _, 0, 0..1);
                                 })
                                 .pipe(drop)
                                 .pipe(Ok)
