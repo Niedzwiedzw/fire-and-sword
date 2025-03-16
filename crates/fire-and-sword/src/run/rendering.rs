@@ -71,7 +71,7 @@ impl<'a> State<'a> {
             .request_device(
                 &wgpu::DeviceDescriptor {
                     label: Some("main device"),
-                    required_features: wgpu::Features::empty(),
+                    required_features: wgpu::Features::SPIRV_SHADER_PASSTHROUGH,
                     required_limits: wgpu::Limits::default(),
                     memory_hints: Default::default(),
                 },
@@ -81,7 +81,7 @@ impl<'a> State<'a> {
             .context("requesting device and queue")?;
 
         // building the pipeline
-        let shader = device.create_shader_module(wgpu::include_spirv!("../../../../shaders.spv"));
+        let shader = unsafe { device.create_shader_module_spirv(&wgpu::include_spirv_raw!("../../../../shaders.spv")) };
 
         // vertex pulling because i dont want to write the layout for a vertex
         let vertex_buffer = {
