@@ -22,3 +22,4 @@ tracing-subscriber.workspace = true
 wgpu.workspace = true
 winit.workspace = true
 shader-types.workspace = true
+image = { version = "0.25.5", features = ["png", "jpeg"] }
