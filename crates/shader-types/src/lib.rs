@@ -2,7 +2,7 @@
 
 pub use {
     bytemuck::{self, Pod, Zeroable},
-    glam::{self, Vec3},
+    glam::{self, Vec3, Vec4},
     tap,
 };
 
@@ -14,7 +14,7 @@ pub struct Color(pub [f32; 4]);
 #[repr(C)]
 pub struct Vertex {
     pub color: Color,
-    pub position: Vec3,
+    pub position: Vec4,
 }
 
 pub trait FromBufferAtIndex {

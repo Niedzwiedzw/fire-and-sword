@@ -1,7 +1,7 @@
 use {
     self::window::WindowHandle,
     anyhow::{Context, Result},
-    shader_types::{Color, Vec3, Vertex},
+    shader_types::{Color, Vec3, Vec4, Vertex},
     tokio_stream::StreamExt,
     tracing::{instrument, warn},
     winit::{
@@ -17,16 +17,16 @@ pub mod rendering;
 
 const VERTICES: &[Vertex] = &[
     Vertex {
-        position: Vec3::new(0., 1., 0.),
-        color: Color::new([1., 1., 1., 1.]),
+        position: Vec4::new(0.0, 1.0, 0.0, 0.), // Top
+        color: Color::new([1.0, 0.0, 0.0, 1.0]),
     },
     Vertex {
-        position: Vec3::new(-1., -1., 0.),
-        color: Color::new([0., 0., 0., 1.]),
+        position: Vec4::new(-1.0, -1.0, 0.0, 0.), // Bottom-left
+        color: Color::new([0.0, 1.0, 0.0, 1.0]),
     },
     Vertex {
-        position: Vec3::new(-1., -1., 0.),
-        color: Color::new([1., 1., 1., 1.]),
+        position: Vec4::new(1.0, -1.0, 0.0, 0.), // Bottom-right
+        color: Color::new([0.0, 0.0, 1.0, 1.0]),
     },
 ];
 
