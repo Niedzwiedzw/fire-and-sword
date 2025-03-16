@@ -1,8 +1,9 @@
 #![no_std]
 
+use padding::WithPadding;
 pub use {
     bytemuck::{self, Pod, Zeroable},
-    glam::{self, Vec3, Vec4},
+    glam::{self, Vec2, Vec3, Vec4},
     tap,
 };
 
@@ -10,11 +11,14 @@ pub use {
 #[repr(C)]
 pub struct Color(pub [f32; 4]);
 
+pub mod padding;
+
 #[derive(Default, Clone, Copy, Debug, Pod, Zeroable)]
 #[repr(C)]
 pub struct Vertex {
-    pub color: Color,
     pub position: Vec4,
+    pub tex_coords: Vec2,
+    pub padding: WithPadding<2, ()>,
 }
 
 pub trait FromBufferAtIndex {

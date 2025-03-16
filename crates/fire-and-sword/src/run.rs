@@ -1,7 +1,7 @@
 use {
     self::window::WindowHandle,
     anyhow::{Context, Result},
-    shader_types::{Color, Vec3, Vec4, Vertex},
+    shader_types::{padding::pad, Color, Vec2, Vec3, Vec4, Vertex},
     tokio_stream::StreamExt,
     tracing::{instrument, warn},
     winit::{
@@ -17,17 +17,30 @@ pub mod rendering;
 
 const VERTICES: &[Vertex] = &[
     Vertex {
-        position: Vec4::new(0.0, 1.0, 0.0, 0.), // Top
-        color: Color::new([1.0, 0.0, 0.0, 1.0]),
-    },
+        position: Vec4::new(-0.0868241, 0.49240386, 0.0, 1.),
+        tex_coords: Vec2::new(0.4131759, 0.99240386),
+        padding: pad(()),
+    }, // A
     Vertex {
-        position: Vec4::new(-1.0, -1.0, 0.0, 0.), // Bottom-left
-        color: Color::new([0.0, 1.0, 0.0, 1.0]),
-    },
+        position: Vec4::new(-0.49513406, 0.06958647, 0.0, 1.),
+        tex_coords: Vec2::new(0.0048659444, 0.56958647),
+        padding: pad(()),
+    }, // B
     Vertex {
-        position: Vec4::new(1.0, -1.0, 0.0, 0.), // Bottom-right
-        color: Color::new([0.0, 0.0, 1.0, 1.0]),
-    },
+        position: Vec4::new(-0.21918549, -0.44939706, 0.0, 1.),
+        tex_coords: Vec2::new(0.28081453, 0.05060294),
+        padding: pad(()),
+    }, // C
+    Vertex {
+        position: Vec4::new(0.35966998, -0.3473291, 0.0, 1.),
+        tex_coords: Vec2::new(0.85967, 0.1526709),
+        padding: pad(()),
+    }, // D
+    Vertex {
+        position: Vec4::new(0.44147372, 0.2347359, 0.0, 1.),
+        tex_coords: Vec2::new(0.9414737, 0.7347359),
+        padding: pad(()),
+    }, // E
 ];
 
 #[instrument]

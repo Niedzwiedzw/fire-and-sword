@@ -18,7 +18,7 @@ pub struct State<'a> {
     pub window: &'a dyn Window,
     pub render_pipeline: wgpu::RenderPipeline,
     pub vertex_buffer: wgpu::Buffer,
-    pub vertex_bind_group: wgpu::BindGroup,
+    pub bind_group: wgpu::BindGroup,
 }
 
 impl<'a> State<'a> {
@@ -80,6 +80,72 @@ impl<'a> State<'a> {
             .await
             .context("requesting device and queue")?;
 
+        surface.configure(&device, &config);
+
+        let diffuse_texture = include_bytes!("../../../../assets/happy-tree.png")
+            .pipe_as_ref(image::load_from_memory)
+            .context("bad image")
+            .map(|i| i.to_rgba8())
+            .context("loading happy tree")
+            .map(|diffuse_rgba| {
+                diffuse_rgba
+                    .dimensions()
+                    .pipe(|(width, height)| wgpu::Extent3d {
+                        width,
+                        height,
+                        depth_or_array_layers: 1,
+                    })
+                    .pipe(
+                        |size @ wgpu::Extent3d {
+                             width,
+                             height,
+                             depth_or_array_layers: _,
+                         }| {
+                            device
+                                .create_texture(&wgpu::TextureDescriptor {
+                                    size,
+                                    mip_level_count: 1,
+                                    sample_count: 1,
+                                    dimension: wgpu::TextureDimension::D2,
+                                    format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                                    usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                                    label: Some("happy-tree.png"),
+                                    view_formats: &[],
+                                })
+                                .pipe(|diffuse_texture| {
+                                    queue
+                                        .write_texture(
+                                            wgpu::TexelCopyTextureInfo {
+                                                texture: &diffuse_texture,
+                                                mip_level: 0,
+                                                origin: wgpu::Origin3d::ZERO,
+                                                aspect: wgpu::TextureAspect::All,
+                                            },
+                                            &diffuse_rgba,
+                                            wgpu::TexelCopyBufferLayout {
+                                                offset: 0,
+                                                bytes_per_row: Some(4 * width),
+                                                rows_per_image: Some(height),
+                                            },
+                                            size,
+                                        )
+                                        .pipe(|_| diffuse_texture)
+                                })
+                        },
+                    )
+            })
+            .context("loading happy little tree")?;
+        let diffuse_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("diffuse_sampler"),
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            ..Default::default()
+        });
+
         // building the pipeline
         let shader = unsafe { device.create_shader_module_spirv(&wgpu::include_spirv_raw!("../../../../shaders.spv")) };
 
@@ -94,25 +160,57 @@ impl<'a> State<'a> {
 
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("Vertex Bind Group Layout"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Storage { read_only: true },
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
+            entries: &[
+                // VERTEX PULLING
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
                 },
-                count: None,
-            }],
+                // TEXTURE
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
         });
 
-        let vertex_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Pipeline layout"),
             layout: &bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: vertex_buffer.as_entire_binding(),
-            }],
+            entries: &[
+                // VERTEX PULLING
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: vertex_buffer.as_entire_binding(),
+                },
+                // TEXTURE
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&diffuse_texture.create_view(&wgpu::TextureViewDescriptor::default())),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::Sampler(&diffuse_sampler),
+                },
+            ],
         });
 
         let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -169,7 +267,7 @@ impl<'a> State<'a> {
             window,
             render_pipeline,
             vertex_buffer,
-            vertex_bind_group,
+            bind_group,
         })
     }
 
@@ -227,7 +325,7 @@ impl<'a> State<'a> {
                                 })
                                 .tap_mut(|pass| {
                                     pass.set_pipeline(&self.render_pipeline);
-                                    pass.set_bind_group(0, &self.vertex_bind_group, &[]);
+                                    pass.set_bind_group(0, &self.bind_group, &[]);
                                     pass.draw(0..VERTICES.len() as _, 0..1);
                                 })
                                 .pipe(drop)

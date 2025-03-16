@@ -14,9 +14,8 @@ use {
 };
 
 #[spirv(fragment)]
-pub fn main_fs(input: Vertex, output: &mut Vec4) {
-    let Color([r, g, b, a]) = input.color;
-    *output = vec4(r, g, b, a);
+pub fn main_fs(#[spirv(flat)] input: Vertex, output: &mut Vec4) {
+    *output = vec4(0.3, 0.2, 0.1, 1.0);
 }
 
 #[spirv(vertex)]
@@ -28,6 +27,6 @@ pub fn main_vs(
 ) {
     let vertex = input[in_vertex_index as usize];
 
-    *out_pos = vertex.position.with_w(2.);
+    *out_pos = vertex.position;
     *output = vertex;
 }
