@@ -11,6 +11,8 @@ use {
     winit::{dpi::PhysicalSize, window::Window},
 };
 
+pub mod texture;
+
 pub struct State<'a> {
     pub surface: wgpu::Surface<'a>,
     pub device: wgpu::Device,
@@ -85,58 +87,7 @@ impl<'a> State<'a> {
 
         surface.configure(&device, &config);
 
-        let diffuse_texture = include_bytes!("../../../../assets/happy-tree.png")
-            .pipe_as_ref(image::load_from_memory)
-            .context("bad image")
-            .map(|i| i.to_rgba8())
-            .context("loading happy tree")
-            .map(|diffuse_rgba| {
-                diffuse_rgba
-                    .dimensions()
-                    .pipe(|(width, height)| wgpu::Extent3d {
-                        width,
-                        height,
-                        depth_or_array_layers: 1,
-                    })
-                    .pipe(
-                        |size @ wgpu::Extent3d {
-                             width,
-                             height,
-                             depth_or_array_layers: _,
-                         }| {
-                            device
-                                .create_texture(&wgpu::TextureDescriptor {
-                                    size,
-                                    mip_level_count: 1,
-                                    sample_count: 1,
-                                    dimension: wgpu::TextureDimension::D2,
-                                    format: wgpu::TextureFormat::Rgba8UnormSrgb,
-                                    usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-                                    label: Some("happy-tree.png"),
-                                    view_formats: &[],
-                                })
-                                .pipe(|diffuse_texture| {
-                                    queue
-                                        .write_texture(
-                                            wgpu::TexelCopyTextureInfo {
-                                                texture: &diffuse_texture,
-                                                mip_level: 0,
-                                                origin: wgpu::Origin3d::ZERO,
-                                                aspect: wgpu::TextureAspect::All,
-                                            },
-                                            &diffuse_rgba,
-                                            wgpu::TexelCopyBufferLayout {
-                                                offset: 0,
-                                                bytes_per_row: Some(4 * width),
-                                                rows_per_image: Some(height),
-                                            },
-                                            size,
-                                        )
-                                        .pipe(|_| diffuse_texture)
-                                })
-                        },
-                    )
-            })
+        let diffuse_texture = texture::Texture::from_bytes(&device, &queue, include_bytes!("../../../../assets/happy-tree.png"), "happy-tree.png")
             .context("loading happy little tree")?;
         info!("loaded happy tree");
 
@@ -215,7 +166,7 @@ impl<'a> State<'a> {
                 // TEXTURE
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: wgpu::BindingResource::TextureView(&diffuse_texture.create_view(&wgpu::TextureViewDescriptor::default())),
+                    resource: wgpu::BindingResource::TextureView(&diffuse_texture.view),
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
