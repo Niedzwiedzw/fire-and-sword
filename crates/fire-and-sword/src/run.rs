@@ -2,15 +2,16 @@ use {
     self::window::WindowHandle,
     anyhow::{Context, Result},
     futures::{FutureExt, Stream, StreamExt},
-    rendering::camera::Camera,
+    rendering::camera::{Camera, SENSITIVITY},
     shader_types::{padding::pad, Vec2, Vec3, Vec4, Vertex},
     std::{collections::BTreeMap, future::ready},
     tap::prelude::*,
     tokio::time::Instant,
     tracing::{instrument, warn},
+    window::WindowingEvent,
     winit::{
-        dpi::PhysicalSize,
-        event::{ElementState, KeyEvent, WindowEvent},
+        dpi::{LogicalPosition, PhysicalPosition, PhysicalSize},
+        event::{DeviceEvent, ElementState, KeyEvent, WindowEvent},
         keyboard::{KeyCode, PhysicalKey},
         window::WindowAttributes,
     },
@@ -59,6 +60,24 @@ const INDICES: &[u16] = &[
     1, 2, 4,
     2, 3, 4,
 ];
+fn direction_from_look_and_speed(look: Vec3, speed: Vec3) -> Vec3 {
+    // Normalize the look vector to ensure it's a unit vector (forward direction)
+    let forward = look.normalize();
+
+    // Define a world "up" vector (assuming Y is up in your coordinate system)
+    let world_up = Vec3::new(0.0, 1.0, 0.0);
+
+    // Compute the right vector (perpendicular to forward and world_up)
+    let right = forward.cross(world_up).normalize();
+
+    // Compute the local up vector (perpendicular to forward and right)
+    let up = forward.cross(right).normalize();
+
+    // Transform the speed vector into the player's local space
+    // speed.x = right, speed.y = up, speed.z = forward
+
+    right * speed.x + up * speed.y + forward * speed.z
+}
 
 pub fn game_clock_v2() -> impl Stream<Item = ()> {
     let start = Instant::now();
@@ -71,6 +90,7 @@ pub fn game_clock_v2() -> impl Stream<Item = ()> {
 
 pub enum AppEvent {
     Key(KeyCode, ElementState),
+    MouseMoved(Vec2),
     Tick,
     Redraw,
     Resize(PhysicalSize<u32>),
@@ -102,7 +122,11 @@ pub async fn run() -> Result<()> {
 
     let mut events = events
         .filter_map(|event| match event {
-            window::WindowingEvent::Winit(window_event) => match window_event {
+            WindowingEvent::Device(DeviceEvent::PointerMotion { delta: (x, y) }) => Vec2::new(x as _, y as _)
+                .pipe(AppEvent::MouseMoved)
+                .pipe(Some)
+                .pipe(ready),
+            WindowingEvent::Window(window_event) => match window_event {
                 WindowEvent::KeyboardInput {
                     event:
                         KeyEvent {
@@ -112,6 +136,7 @@ pub async fn run() -> Result<()> {
                         },
                     ..
                 } => AppEvent::Key(key, state).pipe(Some).pipe(ready),
+
                 WindowEvent::CloseRequested => AppEvent::Exit.pipe(Some).pipe(ready),
                 WindowEvent::RedrawRequested => AppEvent::Redraw.pipe(Some).pipe(ready),
                 WindowEvent::SurfaceResized(physical_size) => physical_size.pipe(AppEvent::Resize).pipe(Some).pipe(ready),
@@ -128,6 +153,21 @@ pub async fn run() -> Result<()> {
     state.render(&camera).await?;
     while let Some(event) = events.next().await {
         match event {
+            AppEvent::MouseMoved(by) => {
+                if let Err(reason) = window
+                    .set_cursor_grab(winit::window::CursorGrabMode::Confined)
+                    .context("grabbing cursor")
+                    .map(|_| window.set_cursor_visible(false))
+                    .and_then(|_| {
+                        window
+                            .set_cursor_position(LogicalPosition::new(200., 200.).into())
+                            .context("setting cursor position")
+                    })
+                {
+                    tracing::warn!("could not grab cursor:\n{reason:?}");
+                }
+                camera.orbit(by.x * SENSITIVITY, by.y * SENSITIVITY);
+            }
             AppEvent::Key(key, state) => {
                 keyboard_state.0.insert(key, state);
             }
@@ -153,11 +193,20 @@ pub async fn run() -> Result<()> {
                 .0
                 .iter()
                 .filter_map(|(k, v)| v.is_pressed().then_some(k))
-                .for_each(|key| match key {
-                    KeyCode::KeyW | KeyCode::ArrowUp => {
-                        camera.position_mut(|p| *p += Vec3::X);
-                    }
-                    _ => {}
+                .filter_map(|key| match key {
+                    KeyCode::KeyW | KeyCode::ArrowUp => Some(Vec3::Z),
+                    KeyCode::KeyS | KeyCode::ArrowDown => Some(-Vec3::Z),
+                    KeyCode::KeyA | KeyCode::ArrowLeft => Some(-Vec3::X),
+                    KeyCode::KeyD | KeyCode::ArrowRight => Some(Vec3::X),
+                    _ => None,
+                })
+                .fold(Vec3::ZERO, |acc, next| acc + next)
+                .pipe(|speed| direction_from_look_and_speed(*camera.look(), speed))
+                .pipe(|delta| delta * 0.3)
+                .pipe(|delta| {
+                    camera.position_mut(|position| {
+                        *position += delta;
+                    })
                 }),
         }
     }

@@ -4,11 +4,13 @@ use {
     tap::prelude::*,
 };
 
+pub const SENSITIVITY: f32 = 0.04;
+
 // A basic camera struct with common properties
 #[derive(Debug, Clone, Copy)]
 pub struct Camera {
     position: Vec3,
-    target: Vec3,
+    look: Vec3,
     up: Vec3,
     fov: f32,         // Field of view in radians
     aspect: f32,      // Aspect ratio (width/height)
@@ -20,16 +22,16 @@ pub struct Camera {
 
 impl Camera {
     pub fn default_for_size((width, height): (f32, f32)) -> Self {
-        Self::new((0.0, 1.0, 2.0).into(), Vec3::ZERO, glam::Vec3::Y, 45., width / height, 0.1, 100.)
+        Self::new((0.0, 1.0, 2.0).into(), -Vec3::Z, glam::Vec3::Y, 45., width / height, 0.1, 100.)
     }
 }
 
 impl Camera {
     // Create a new camera with default values
-    pub fn new(position: Vec3, target: Vec3, up: Vec3, fov: f32, aspect: f32, near: f32, far: f32) -> Self {
+    pub fn new(position: Vec3, look: Vec3, up: Vec3, fov: f32, aspect: f32, near: f32, far: f32) -> Self {
         Camera {
             position,
-            target,
+            look,
             up,
             fov,
             aspect,
@@ -40,11 +42,13 @@ impl Camera {
         }
         .tap_mut(|c| c.update_matrices())
     }
-
+    pub fn look(&self) -> &Vec3 {
+        &self.look
+    }
     // Update view and projection matrices
     fn update_matrices(&mut self) {
         // Create view matrix (camera's orientation and position)
-        self.view = Mat4::look_at_rh(self.position, self.target, self.up);
+        self.view = Mat4::look_at_rh(self.position, self.position + self.look, self.up);
 
         // Create projection matrix
         self.projection = Mat4::perspective_rh(self.fov, self.aspect, self.near, self.far);
@@ -67,8 +71,8 @@ impl Camera {
     }
 
     // Update camera target
-    pub fn set_target(&mut self, target: Vec3) {
-        self.target = target;
+    pub fn set_look(&mut self, look: Vec3) {
+        self.look = look;
         self.update_matrices();
     }
 
@@ -80,11 +84,11 @@ impl Camera {
 
     // Simple orbit control
     pub fn orbit(&mut self, delta_yaw: f32, delta_pitch: f32) {
-        let forward = (self.target - self.position).normalize();
+        let forward = self.look.normalize();
         let right = forward.cross(self.up).normalize();
 
         // Calculate distance to target
-        let distance = (self.target - self.position).length();
+        let distance = 1.;
 
         // Create rotation quaternions
         let yaw = Quat::from_axis_angle(self.up, delta_yaw);
@@ -95,7 +99,7 @@ impl Camera {
 
         // Update position
         let direction = rotation * forward;
-        self.position = self.target - direction * distance;
+        self.position = self.position + self.look.normalize() - direction * distance;
 
         self.update_matrices();
     }

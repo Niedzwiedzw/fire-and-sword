@@ -11,7 +11,7 @@ use {
     tracing::{debug, instrument},
     winit::{
         application::ApplicationHandler,
-        event::WindowEvent,
+        event::{DeviceEvent, WindowEvent},
         event_loop::{ActiveEventLoop, ControlFlow, EventLoopBuilder},
         platform::wayland::EventLoopBuilderExtWayland,
         window::{Window, WindowAttributes, WindowId},
@@ -25,7 +25,8 @@ pub struct App {
 
 #[derive(derive_more::From, Debug)]
 pub enum WindowingEvent {
-    Winit(WindowEvent),
+    Window(WindowEvent),
+    Device(DeviceEvent),
     WindowCreated(Result<Box<dyn Window>>),
 }
 
@@ -44,9 +45,16 @@ impl App {
 
 impl ApplicationHandler for App {
     #[instrument(skip(self), ret, level = "TRACE")]
+    fn device_event(&mut self, event_loop: &dyn ActiveEventLoop, device_id: Option<winit::event::DeviceId>, event: winit::event::DeviceEvent) {
+        self.events
+            .blocking_send(event.pipe(WindowingEvent::Device))
+            .expect("application died")
+    }
+
+    #[instrument(skip(self), ret, level = "TRACE")]
     fn window_event(&mut self, event_loop: &dyn ActiveEventLoop, _: WindowId, event: WindowEvent) {
         self.events
-            .blocking_send(event.pipe(WindowingEvent::Winit))
+            .blocking_send(event.pipe(WindowingEvent::Window))
             .expect("application died")
     }
 
