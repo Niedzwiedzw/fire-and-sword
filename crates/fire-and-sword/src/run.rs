@@ -154,11 +154,6 @@ pub async fn run() -> Result<()> {
                     .set_cursor_grab(winit::window::CursorGrabMode::Confined)
                     .context("grabbing cursor")
                     .map(|_| window.set_cursor_visible(false))
-                    .and_then(|_| {
-                        window
-                            .set_cursor_position(LogicalPosition::new(200., 200.).into())
-                            .context("setting cursor position")
-                    })
                 {
                     tracing::warn!("could not grab cursor:\n{reason:?}");
                 }
