@@ -6,15 +6,9 @@
 #[allow(unused_imports)]
 use spirv_std::num_traits::Float;
 use {
-    glam::{Mat4, Vec4Swizzles},
-    shader_types::{Color, Vertex},
-    spirv_std::{
-        glam::{vec4, Vec4},
-        image::Image2d,
-        spirv,
-        Image,
-        Sampler,
-    },
+    glam::Mat4,
+    shader_types::Vertex,
+    spirv_std::{glam::Vec4, image::Image2d, spirv, Sampler},
 };
 
 #[spirv(fragment)]

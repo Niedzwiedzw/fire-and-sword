@@ -3,17 +3,70 @@ use {
     crate::run::INDICES,
     anyhow::{Context, Result},
     camera::Camera,
+    futures::channel::oneshot,
     itertools::Itertools,
-    shader_types::bytemuck,
-    std::iter::once,
+    shader_types::bytemuck::{self, AnyBitPattern, NoUninit},
+    std::{iter::once, ops::Range},
     tap::prelude::*,
-    tracing::info,
-    wgpu::{util::DeviceExt, Color, CommandEncoder},
+    tracing::{error, info, instrument, trace},
+    wgpu::{util::DeviceExt, Color, CommandEncoder, MapMode, WasmNotSend},
     winit::{dpi::PhysicalSize, window::Window},
 };
 
 pub mod camera;
 pub mod texture;
+
+#[extension_traits::extension(pub trait RangeMapExt)]
+impl<T> Range<T> {
+    fn map_range<U>(self, mut map: impl FnMut(T) -> U) -> Range<U> {
+        Range {
+            start: map(self.start),
+            end: map(self.end),
+        }
+    }
+}
+
+#[extension_traits::extension(pub(crate) trait AsyncBufferWriteExt)]
+impl wgpu::Buffer {
+    async fn write_async<'a, T, F>(&'a self, device: &wgpu::Device, bounds: std::ops::Range<u64>, write: F) -> Result<()>
+    where
+        T: NoUninit + AnyBitPattern + 'a,
+        F: FnOnce(&mut [T]) + WasmNotSend + 'static,
+    {
+        let bounds = bounds.map_range(|address| address * (core::mem::size_of::<T>() as u64));
+        let (tx, rx) = oneshot::channel();
+        self.slice(bounds.clone()).pipe(|slice| {
+            self.clone().pipe(|slice_access| {
+                slice.map_async(MapMode::Write, move |w| {
+                    w.context("bad write")
+                        .and_then(|_| {
+                            let mut slice = slice_access.slice(bounds).get_mapped_range_mut();
+                            let data = bytemuck::try_cast_slice_mut::<_, _>(&mut slice)
+                                .map_err(|bytes| anyhow::anyhow!("{bytes:?}"))
+                                .context("casting failed")?;
+                            write(data);
+                            drop(slice);
+                            slice_access.unmap();
+                            Ok(())
+                        })
+                        .and_then(|_| {
+                            tx.send(())
+                                .map_err(|_| anyhow::anyhow!("send failed"))
+                                .context("sending")
+                        })
+                        .pipe(|r| {
+                            if let Err(reason) = r {
+                                error!("write failed:\n{reason:?}");
+                            }
+                        })
+                })
+            });
+        });
+        device.poll(wgpu::Maintain::Wait);
+        trace!("waiting for async operation to finish");
+        rx.await.context("task cancelled")
+    }
+}
 
 pub struct State<'a> {
     pub surface: wgpu::Surface<'a>,
@@ -26,6 +79,7 @@ pub struct State<'a> {
     pub vertex_buffer: wgpu::Buffer,
     pub bind_group: wgpu::BindGroup,
     index_buffer: wgpu::Buffer,
+    camera_buffer: wgpu::Buffer,
 }
 
 impl<'a> State<'a> {
@@ -78,7 +132,7 @@ impl<'a> State<'a> {
             .request_device(
                 &wgpu::DeviceDescriptor {
                     label: Some("main device"),
-                    required_features: wgpu::Features::SPIRV_SHADER_PASSTHROUGH,
+                    required_features: wgpu::Features::SPIRV_SHADER_PASSTHROUGH | wgpu::Features::MAPPABLE_PRIMARY_BUFFERS,
                     required_limits: wgpu::Limits::default(),
                     memory_hints: Default::default(),
                 },
@@ -132,7 +186,7 @@ impl<'a> State<'a> {
             device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("Camera buffer"),
                 contents: bytemuck::cast_slice(&[camera]),
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::MAP_WRITE,
             })
         });
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -262,6 +316,7 @@ impl<'a> State<'a> {
             vertex_buffer,
             index_buffer,
             bind_group,
+            camera_buffer,
         })
     }
 
@@ -286,7 +341,18 @@ impl<'a> State<'a> {
             })
             .with_context(|| format!("running on encoder: {label}"))
     }
-    pub fn render(&mut self) -> Result<()> {
+    #[instrument(skip_all)]
+    pub async fn render(&mut self, camera: &Camera) -> Result<()> {
+        trace!("flushing camera");
+        // FLUSH CAMERA
+        let camera = camera.get_view_projection();
+        self.camera_buffer
+            .write_async(&self.device, 0..1u64, move |buf| {
+                buf[0] = camera;
+            })
+            .await
+            .context("writing camera")?;
+        trace!("writing to surface");
         self.surface
             .get_current_texture()
             .context("getting current texture")

@@ -1,4 +1,5 @@
 #![allow(clippy::unit_arg)]
+#![feature(new_range_api)]
 
 use anyhow::{Context, Result};
 
@@ -7,7 +8,7 @@ mod logging {
     use {
         std::str::FromStr,
         tracing::Level,
-        tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt},
+        tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter},
     };
 
     /// Sets up tracing with a level from the RUST_LOG env var and output to stderr

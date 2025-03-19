@@ -1,9 +1,11 @@
 use {
     glam::{Mat4, Quat, Vec3},
     shader_types::glam,
+    tap::prelude::*,
 };
 
 // A basic camera struct with common properties
+#[derive(Debug, Clone, Copy)]
 pub struct Camera {
     position: Vec3,
     target: Vec3,
@@ -25,7 +27,7 @@ impl Camera {
 impl Camera {
     // Create a new camera with default values
     pub fn new(position: Vec3, target: Vec3, up: Vec3, fov: f32, aspect: f32, near: f32, far: f32) -> Self {
-        let mut camera = Camera {
+        Camera {
             position,
             target,
             up,
@@ -35,9 +37,8 @@ impl Camera {
             far,
             view: Mat4::IDENTITY,
             projection: Mat4::IDENTITY,
-        };
-        camera.update_matrices();
-        camera
+        }
+        .tap_mut(|c| c.update_matrices())
     }
 
     // Update view and projection matrices
@@ -57,6 +58,11 @@ impl Camera {
     // Update camera position
     pub fn set_position(&mut self, position: Vec3) {
         self.position = position;
+        self.update_matrices();
+    }
+
+    pub fn position_mut(&mut self, position: impl FnOnce(&mut Vec3)) {
+        position(&mut self.position);
         self.update_matrices();
     }
 
