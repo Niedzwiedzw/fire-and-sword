@@ -77,7 +77,6 @@ pub async fn run() -> Result<()> {
                 } => std::process::exit(0),
                 WindowEvent::RedrawRequested => {
                     state.window.request_redraw();
-                    state.update();
                     state
                         .render()
                         .context("rendering failed")

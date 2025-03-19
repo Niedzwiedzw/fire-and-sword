@@ -2,6 +2,7 @@ use {
     super::VERTICES,
     crate::run::INDICES,
     anyhow::{Context, Result},
+    camera::Camera,
     itertools::Itertools,
     shader_types::bytemuck,
     std::iter::once,
@@ -11,6 +12,7 @@ use {
     winit::{dpi::PhysicalSize, window::Window},
 };
 
+pub mod camera;
 pub mod texture;
 
 pub struct State<'a> {
@@ -120,6 +122,19 @@ impl<'a> State<'a> {
             usage: wgpu::BufferUsages::INDEX,
         });
 
+        let camera_buffer = Camera::default_for_size(
+            window
+                .surface_size()
+                .pipe(|PhysicalSize { width, height }| (width as _, height as _)),
+        )
+        .pipe(|camera| camera.get_view_projection())
+        .pipe(|camera| {
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Camera buffer"),
+                contents: bytemuck::cast_slice(&[camera]),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            })
+        });
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("Vertex Bind Group Layout"),
             entries: &[
@@ -151,6 +166,17 @@ impl<'a> State<'a> {
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
                 },
+                // CAMERA
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
             ],
         });
 
@@ -171,6 +197,11 @@ impl<'a> State<'a> {
                 wgpu::BindGroupEntry {
                     binding: 2,
                     resource: wgpu::BindingResource::Sampler(&diffuse_sampler),
+                },
+                // CAMERA
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: camera_buffer.as_entire_binding(),
                 },
             ],
         });
@@ -255,7 +286,6 @@ impl<'a> State<'a> {
             })
             .with_context(|| format!("running on encoder: {label}"))
     }
-    pub fn update(&mut self) {}
     pub fn render(&mut self) -> Result<()> {
         self.surface
             .get_current_texture()
