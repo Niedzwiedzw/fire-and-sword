@@ -176,19 +176,21 @@ impl<'a> State<'a> {
             usage: wgpu::BufferUsages::INDEX,
         });
 
-        let camera_buffer = Camera::default_for_size(
-            window
-                .surface_size()
-                .pipe(|PhysicalSize { width, height }| (width as _, height as _)),
-        )
-        .pipe(|camera| camera.get_view_projection())
-        .pipe(|camera| {
-            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("Camera buffer"),
-                contents: bytemuck::cast_slice(&[camera]),
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::MAP_WRITE,
+        let camera_buffer = Camera::new([10., 0., 0.].into())
+            .pipe(|camera| {
+                camera.get_view_projection(
+                    window
+                        .surface_size()
+                        .pipe(|PhysicalSize { width, height }| (width as _, height as _)),
+                )
             })
-        });
+            .pipe(|camera| {
+                device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("Camera buffer"),
+                    contents: bytemuck::cast_slice(&[camera]),
+                    usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::MAP_WRITE,
+                })
+            });
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("Vertex Bind Group Layout"),
             entries: &[
@@ -345,7 +347,11 @@ impl<'a> State<'a> {
     pub async fn render(&mut self, camera: &Camera) -> Result<()> {
         trace!("flushing camera");
         // FLUSH CAMERA
-        let camera = camera.get_view_projection();
+        let camera = camera.get_view_projection(
+            self.window
+                .surface_size()
+                .pipe(|PhysicalSize { width, height }| (width as _, height as _)),
+        );
         self.camera_buffer
             .write_async(&self.device, 0..1u64, move |buf| {
                 buf[0] = camera;

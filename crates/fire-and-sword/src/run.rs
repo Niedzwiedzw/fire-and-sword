@@ -112,11 +112,7 @@ pub async fn run() -> Result<()> {
         .await
         .context("creating renderer state")?;
 
-    let mut camera = Camera::default_for_size(
-        window
-            .surface_size()
-            .pipe(|PhysicalSize { width, height }| (width as _, height as _)),
-    );
+    let mut camera = Camera::new(Default::default());
 
     let mut keyboard_state = KeyboardState::default();
 
@@ -166,7 +162,7 @@ pub async fn run() -> Result<()> {
                 {
                     tracing::warn!("could not grab cursor:\n{reason:?}");
                 }
-                camera.orbit(by.x * SENSITIVITY, by.y * SENSITIVITY);
+                camera.update_rotation(by.x * SENSITIVITY, by.y * SENSITIVITY);
             }
             AppEvent::Key(key, state) => {
                 keyboard_state.0.insert(key, state);
@@ -201,7 +197,7 @@ pub async fn run() -> Result<()> {
                     _ => None,
                 })
                 .fold(Vec3::ZERO, |acc, next| acc + next)
-                .pipe(|speed| direction_from_look_and_speed(*camera.look(), speed))
+                .pipe(|speed| direction_from_look_and_speed(camera.look(), speed))
                 .pipe(|delta| delta * 0.3)
                 .pipe(|delta| {
                     camera.position_mut(|position| {
