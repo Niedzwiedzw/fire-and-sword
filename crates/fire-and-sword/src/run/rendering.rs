@@ -5,6 +5,7 @@ use {
     camera::Camera,
     futures::channel::oneshot,
     itertools::Itertools,
+    model::{DrawModel, Model},
     shader_types::{
         bytemuck::{self, AnyBitPattern, NoUninit},
         glam::Quat,
@@ -92,6 +93,7 @@ pub struct State<'a> {
     pub instance_buffer: wgpu::Buffer,
     pub instances: Vec<Instance>,
     pub depth_texture: texture::Texture,
+    pub obj_model: Model,
 }
 
 impl<'a> State<'a> {
@@ -229,17 +231,6 @@ impl<'a> State<'a> {
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("Vertex Bind Group Layout"),
             entries: &[
-                // VERTEX PULLING
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
                 // TEXTURE
                 wgpu::BindGroupLayoutEntry {
                     binding: 1,
@@ -286,11 +277,6 @@ impl<'a> State<'a> {
             label: Some("Pipeline layout"),
             layout: &bind_group_layout,
             entries: &[
-                // VERTEX PULLING
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: vertex_buffer.as_entire_binding(),
-                },
                 // TEXTURE
                 wgpu::BindGroupEntry {
                     binding: 1,
@@ -366,6 +352,8 @@ impl<'a> State<'a> {
             cache: None,
         });
 
+        let obj_model = Model::load_learn_wgpu_way("cube.obj", &device, &queue).context("loading cube")?;
+
         Ok(Self {
             surface,
             device,
@@ -381,6 +369,7 @@ impl<'a> State<'a> {
             instances,
             instance_buffer,
             depth_texture,
+            obj_model,
         })
     }
 
@@ -406,6 +395,7 @@ impl<'a> State<'a> {
             })
             .with_context(|| format!("running on encoder: {label}"))
     }
+
     #[instrument(skip_all)]
     pub async fn render(&mut self, camera: &Camera) -> Result<()> {
         trace!("flushing camera");
@@ -461,8 +451,7 @@ impl<'a> State<'a> {
                                 .tap_mut(|pass| {
                                     pass.set_pipeline(&self.render_pipeline);
                                     pass.set_bind_group(0, &self.bind_group, &[]);
-                                    pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-                                    pass.draw_indexed(0..INDICES.len() as _, 0, 0..(self.instances.len() as _));
+                                    pass.draw_mesh_instanced(&self.obj_model.meshes[0], 0..self.instances.len() as u32);
                                 })
                                 .pipe(drop)
                                 .pipe(Ok)

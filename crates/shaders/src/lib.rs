@@ -25,7 +25,7 @@ pub fn main_fs(
 pub fn main_vs(
     #[spirv(vertex_index)] in_vertex_index: i32,
     #[spirv(instance_index)] in_instance_index: i32,
-    #[spirv(storage_buffer, descriptor_set = 0, binding = 0)] input: &[Vertex],
+    #[spirv(storage_buffer, descriptor_set = 1, binding = 0)] input: &[Vertex],
     #[spirv(storage_buffer, descriptor_set = 0, binding = 4)] instances: &[Instance],
     #[spirv(uniform, descriptor_set = 0, binding = 3)] camera: &Mat4,
     #[spirv(position)] out_pos: &mut Vec4,
