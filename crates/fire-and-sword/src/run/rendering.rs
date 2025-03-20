@@ -22,6 +22,7 @@ use {
 };
 
 pub mod camera;
+pub mod model;
 pub mod texture;
 
 #[extension_traits::extension(pub trait RangeMapExt)]
