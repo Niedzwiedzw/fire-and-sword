@@ -6,7 +6,7 @@
 #[allow(unused_imports)]
 use spirv_std::num_traits::Float;
 use {
-    glam::{Affine3A, Mat4},
+    glam::{Affine3A, Mat4, Vec4Swizzles},
     shader_types::{Instance, Vertex},
     spirv_std::{glam::Vec4, image::Image2d, spirv, Sampler},
 };
@@ -33,7 +33,7 @@ pub fn main_vs(
 ) {
     let mut vertex = input[in_vertex_index as usize];
     let instance = instances[in_instance_index as usize];
-    vertex.position = *camera * Affine3A::from_translation(instance.position.inner) * vertex.position;
+    vertex.position = *camera * (instance.position.xyz() + Affine3A::from_quat(instance.rotation).transform_point3(vertex.position.xyz())).extend(1.);
 
     *out_pos = vertex.position;
     *output = vertex;

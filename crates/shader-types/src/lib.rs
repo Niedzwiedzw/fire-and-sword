@@ -24,6 +24,6 @@ pub struct Vertex {
 #[derive(Default, Clone, Copy, Debug, Pod, Zeroable)]
 #[repr(C)]
 pub struct Instance {
-    pub position: WithPadding<1, Vec3>,
+    pub position: Vec4,
     pub rotation: Quat,
 }

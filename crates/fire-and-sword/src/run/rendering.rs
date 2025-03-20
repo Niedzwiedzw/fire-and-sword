@@ -8,11 +8,13 @@ use {
     shader_types::{
         bytemuck::{self, AnyBitPattern, NoUninit},
         glam::Quat,
-        padding::pad,
         Instance,
         Vec3,
     },
-    std::{iter::once, ops::Range},
+    std::{
+        iter::once,
+        ops::{Mul, Range},
+    },
     tap::prelude::*,
     tracing::{error, info, instrument, trace},
     wgpu::{util::DeviceExt, Color, CommandEncoder, MapMode, WasmNotSend},
@@ -177,16 +179,21 @@ impl<'a> State<'a> {
                 usage: wgpu::BufferUsages::STORAGE,
             })
         };
+        const NUM_INSTANCES: u32 = 10;
+        const INSTANCE_DISPLACEMENT: Vec3 = Vec3::new(NUM_INSTANCES as f32 * 0.5, 0.0, NUM_INSTANCES as f32 * 0.5);
 
-        let instances = (0..200)
-            .flat_map(|z| (0..200).map(move |x| Vec3::new(x as _, 0., z as _)))
+        let instances = (0..NUM_INSTANCES)
+            .flat_map(|z| (0..NUM_INSTANCES).map(move |x| (x, z)))
+            .map(|(x, z)| Vec3::new(x as _, 0., z as _))
+            .map(|position| position - INSTANCE_DISPLACEMENT)
             .enumerate()
             .map(|(idx, position)| {
-                Quat::from_axis_angle(position.normalize_or(Vec3::Z), (idx as f32 * 3.).to_radians()).pipe(|rotation| Instance {
-                    position: pad(position),
+                Quat::from_rotation_z((idx as f32).mul(15.).to_radians()).pipe(|rotation| Instance {
+                    position: position.extend(1.),
                     rotation,
                 })
             })
+            .inspect(|instance| info!("{:?}", instance.position))
             .collect_vec();
         let instance_buffer = {
             device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -334,7 +341,9 @@ impl<'a> State<'a> {
                 topology: wgpu::PrimitiveTopology::TriangleList,
                 strip_index_format: None,
                 front_face: wgpu::FrontFace::Ccw,
-                cull_mode: Some(wgpu::Face::Back),
+                // WARN: huge perf hit
+                cull_mode: None,
+                // cull_mode: Some(wgpu::Face::Back),
                 polygon_mode: wgpu::PolygonMode::Fill,
                 unclipped_depth: false,
                 conservative: false,
