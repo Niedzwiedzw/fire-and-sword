@@ -77,7 +77,7 @@ impl Model {
                     entries: &[
                         // TEXTURE
                         wgpu::BindGroupLayoutEntry {
-                            binding: 1,
+                            binding: 0,
                             visibility: wgpu::ShaderStages::FRAGMENT,
                             ty: wgpu::BindingType::Texture {
                                 multisampled: false,
@@ -87,7 +87,7 @@ impl Model {
                             count: None,
                         },
                         wgpu::BindGroupLayoutEntry {
-                            binding: 2,
+                            binding: 1,
                             visibility: wgpu::ShaderStages::FRAGMENT,
                             ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                             count: None,
