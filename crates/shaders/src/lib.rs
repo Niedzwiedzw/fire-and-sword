@@ -7,7 +7,7 @@
 use spirv_std::num_traits::Float;
 use {
     glam::{Affine3A, Mat4, Vec4Swizzles},
-    shader_types::{Instance, Vertex},
+    shader_types::{model::ModelVertex, Instance, Vertex},
     spirv_std::{glam::Vec4, image::Image2d, spirv, Sampler},
 };
 
@@ -15,7 +15,7 @@ use {
 pub fn main_fs(
     #[spirv(descriptor_set = 0, binding = 1)] image: &Image2d,
     #[spirv(descriptor_set = 0, binding = 2)] sampler: &Sampler,
-    input: Vertex,
+    input: ModelVertex,
     output: &mut Vec4,
 ) {
     *output = image.sample(*sampler, input.tex_coords);
@@ -25,11 +25,11 @@ pub fn main_fs(
 pub fn main_vs(
     #[spirv(vertex_index)] in_vertex_index: i32,
     #[spirv(instance_index)] in_instance_index: i32,
-    #[spirv(storage_buffer, descriptor_set = 0, binding = 0)] input: &[Vertex],
+    #[spirv(storage_buffer, descriptor_set = 1, binding = 0)] input: &[ModelVertex],
     #[spirv(storage_buffer, descriptor_set = 0, binding = 4)] instances: &[Instance],
     #[spirv(uniform, descriptor_set = 0, binding = 3)] camera: &Mat4,
     #[spirv(position)] out_pos: &mut Vec4,
-    output: &mut Vertex,
+    output: &mut ModelVertex,
 ) {
     let mut vertex = input[in_vertex_index as usize];
     let instance = instances[in_instance_index as usize];

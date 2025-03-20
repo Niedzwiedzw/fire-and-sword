@@ -8,7 +8,7 @@ use {
         ops::Range,
         path::{Path, PathBuf},
     },
-    wgpu::{util::DeviceExt, RenderPass},
+    wgpu::{util::DeviceExt, BindGroupLayout, Device, RenderPass},
 };
 
 pub struct Material {
@@ -39,6 +39,25 @@ pub fn load_texture(file_name: &Path, device: &wgpu::Device, queue: &wgpu::Queue
 
 fn assets_root() -> PathBuf {
     PathBuf::from("assets")
+}
+
+#[extension_traits::extension(pub trait DeviceModelExt)]
+impl Device {
+    fn mesh_bind_group_layout(&self) -> BindGroupLayout {
+        self.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Mesh Vertex Buffer Bind Group Layout"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+        })
+    }
 }
 
 impl Model {
@@ -140,26 +159,14 @@ impl Model {
                 let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                     label: Some(&format!("{:?} Vertex Buffer", file_name)),
                     contents: bytemuck::cast_slice(&vertices),
-                    usage: wgpu::BufferUsages::VERTEX,
+                    usage: wgpu::BufferUsages::STORAGE,
                 });
                 let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                     label: Some(&format!("{:?} Index Buffer", file_name)),
                     contents: bytemuck::cast_slice(&m.mesh.indices),
                     usage: wgpu::BufferUsages::INDEX,
                 });
-                let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                    label: Some(&format!("{:?} Vertex Buffer Bind Group Layout", file_name)),
-                    entries: &[wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::VERTEX,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Storage { read_only: true },
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    }],
-                });
+                let bind_group_layout = device.mesh_bind_group_layout();
 
                 let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
                     layout: &bind_group_layout,
