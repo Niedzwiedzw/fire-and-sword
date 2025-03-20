@@ -193,7 +193,7 @@ pub async fn run() -> Result<()> {
                 })
                 .fold(Vec3::ZERO, |acc, next| acc + next)
                 .pipe(|speed| direction_from_look_and_speed(camera.look(), speed))
-                .pipe(|delta| delta * 0.3)
+                .pipe(|delta| delta * 0.15)
                 .pipe(|delta| {
                     camera.position_mut(|position| {
                         *position += delta;

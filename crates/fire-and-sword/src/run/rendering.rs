@@ -5,7 +5,13 @@ use {
     camera::Camera,
     futures::channel::oneshot,
     itertools::Itertools,
-    shader_types::bytemuck::{self, AnyBitPattern, NoUninit},
+    shader_types::{
+        bytemuck::{self, AnyBitPattern, NoUninit},
+        glam::Quat,
+        padding::pad,
+        Instance,
+        Vec3,
+    },
     std::{iter::once, ops::Range},
     tap::prelude::*,
     tracing::{error, info, instrument, trace},
@@ -78,8 +84,10 @@ pub struct State<'a> {
     pub render_pipeline: wgpu::RenderPipeline,
     pub vertex_buffer: wgpu::Buffer,
     pub bind_group: wgpu::BindGroup,
-    index_buffer: wgpu::Buffer,
-    camera_buffer: wgpu::Buffer,
+    pub index_buffer: wgpu::Buffer,
+    pub camera_buffer: wgpu::Buffer,
+    pub instance_buffer: wgpu::Buffer,
+    pub instances: Vec<Instance>,
 }
 
 impl<'a> State<'a> {
@@ -170,6 +178,24 @@ impl<'a> State<'a> {
             })
         };
 
+        let instances = (0..200)
+            .flat_map(|z| (0..200).map(move |x| Vec3::new(x as _, 0., z as _)))
+            .enumerate()
+            .map(|(idx, position)| {
+                Quat::from_axis_angle(position.normalize_or(Vec3::Z), (idx as f32 * 3.).to_radians()).pipe(|rotation| Instance {
+                    position: pad(position),
+                    rotation,
+                })
+            })
+            .collect_vec();
+        let instance_buffer = {
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Vertex buffer"),
+                contents: instances.pipe_deref(bytemuck::cast_slice),
+                usage: wgpu::BufferUsages::STORAGE,
+            })
+        };
+
         let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Index buffer"),
             contents: bytemuck::cast_slice(INDICES),
@@ -233,6 +259,17 @@ impl<'a> State<'a> {
                     },
                     count: None,
                 },
+                // INSTANCES
+                wgpu::BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
             ],
         });
 
@@ -258,6 +295,11 @@ impl<'a> State<'a> {
                 wgpu::BindGroupEntry {
                     binding: 3,
                     resource: camera_buffer.as_entire_binding(),
+                },
+                // INSTANCE
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: instance_buffer.as_entire_binding(),
                 },
             ],
         });
@@ -319,6 +361,8 @@ impl<'a> State<'a> {
             index_buffer,
             bind_group,
             camera_buffer,
+            instances,
+            instance_buffer,
         })
     }
 
@@ -392,7 +436,7 @@ impl<'a> State<'a> {
                                     pass.set_pipeline(&self.render_pipeline);
                                     pass.set_bind_group(0, &self.bind_group, &[]);
                                     pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-                                    pass.draw_indexed(0..INDICES.len() as _, 0, 0..1);
+                                    pass.draw_indexed(0..INDICES.len() as _, 0, 0..(self.instances.len() as _));
                                 })
                                 .pipe(drop)
                                 .pipe(Ok)
