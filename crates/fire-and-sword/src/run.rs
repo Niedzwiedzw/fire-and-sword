@@ -10,7 +10,7 @@ use {
     tracing::{instrument, warn},
     window::WindowingEvent,
     winit::{
-        dpi::{LogicalPosition, PhysicalPosition, PhysicalSize},
+        dpi::PhysicalSize,
         event::{DeviceEvent, ElementState, KeyEvent, WindowEvent},
         keyboard::{KeyCode, PhysicalKey},
         window::WindowAttributes,

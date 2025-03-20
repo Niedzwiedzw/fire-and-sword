@@ -1,7 +1,6 @@
 use {
-    glam::{Mat4, Quat, Vec3},
+    glam::{Mat4, Vec3},
     shader_types::glam,
-    tap::prelude::*,
 };
 
 pub const SENSITIVITY: f32 = 0.04;
