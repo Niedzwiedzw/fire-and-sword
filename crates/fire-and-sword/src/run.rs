@@ -5,7 +5,15 @@ use {
     futures::{FutureExt, Stream, StreamExt},
     itertools::Itertools,
     rendering::camera::{Camera, SENSITIVITY},
-    shader_types::{glam::Quat, light_source::LightSource, Color, Instance, Vec2, Vec3, Vec4},
+    shader_types::{
+        glam::{Mat3, Quat, Vec4Swizzles},
+        light_source::LightSource,
+        Color,
+        Instance,
+        Vec2,
+        Vec3,
+        Vec4,
+    },
     std::{collections::BTreeMap, future::ready, ops::Mul},
     tap::prelude::*,
     tokio::time::Instant,
@@ -76,7 +84,7 @@ pub async fn run() -> Result<()> {
     } = WindowHandle::new(WindowAttributes::default().with_title(concat!(clap::crate_name!(), " ", clap::crate_version!()))).await?;
     let mut game_state = GameState {
         light_sources: vec![LightSource {
-            position: Vec4::new(0., 1., 0., 1.),
+            position: Vec4::new(10., 1., 0., 1.),
             color: Color([1., 1., 1., 1.]),
         }],
         instances: (0..10)
@@ -190,6 +198,10 @@ pub async fn run() -> Result<()> {
                             *position += delta;
                         })
                     });
+                // moving lights
+                game_state.light_sources.iter_mut().for_each(|light| {
+                    light.position = (Mat3::from_rotation_y(3.0f32.to_radians()) * light.position.xyz()).extend(1.);
+                });
 
                 // render
                 state.window.request_redraw();

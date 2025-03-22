@@ -293,8 +293,8 @@ impl<'a> State<'a> {
                                             store: wgpu::StoreOp::Store,
                                             load: wgpu::LoadOp::Clear(Color {
                                                 r: 0.1,
-                                                g: 0.2,
-                                                b: 0.3,
+                                                g: 0.1,
+                                                b: 0.1,
                                                 a: 1.0,
                                             }),
                                         },

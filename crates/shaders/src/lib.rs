@@ -44,16 +44,15 @@ pub fn main_fs(
             let light_color = Vec3::new(r, g, b);
 
             // AMBIENT
-            let ambient = light_color * 0.0;
+            let ambient = light_color * 0.1;
             lighting += ambient;
 
             // DIFFUSE
-            let diffuse_strength = (pixel_position - light_source)
-                .xyz()
-                .dot(normal.xyz())
-                .max(0.);
-            let diffuse = diffuse_strength * light_color;
-            lighting += diffuse * 0.1;
+            let light_ray = pixel_position - light_source;
+            let weaken = (1.0 / light_ray.length()).powf(0.2);
+            let diffuse_strength = (light_ray).xyz().dot(normal.xyz()).max(0.);
+            let diffuse = diffuse_strength * light_color * weaken;
+            lighting += diffuse * 0.05;
 
             idx += 1;
         }
@@ -71,11 +70,11 @@ pub fn main_vs(
     #[spirv(position)] out_pos: &mut Vec4,
     output: &mut ModelVertex,
 ) {
-    let vertex = input[in_vertex_index as usize];
+    let mut vertex = input[in_vertex_index as usize];
     let instance = instances[in_instance_index as usize];
-    // vertex.position = *camera * (instance.position.xyz() + Affine3A::from_quat(instance.rotation).transform_point3(vertex.position.xyz())).extend(1.);
+    vertex.position = (instance.position.xyz() + Affine3A::from_quat(instance.rotation).transform_point3(vertex.position.xyz())).extend(1.);
     // vertex.normal = (Affine3A::from_quat(instance.rotation).transform_vector3(vertex.normal.xyz())).extend(0.);
 
-    *out_pos = *camera * (instance.position.xyz() + Affine3A::from_quat(instance.rotation).transform_point3(vertex.position.xyz())).extend(1.);
+    *out_pos = *camera * vertex.position;
     *output = vertex;
 }
