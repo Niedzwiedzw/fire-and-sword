@@ -5,7 +5,7 @@ use {
     futures::{FutureExt, Stream, StreamExt},
     itertools::Itertools,
     rendering::camera::{Camera, SENSITIVITY},
-    shader_types::{glam::Quat, Instance, Vec2, Vec3},
+    shader_types::{glam::Quat, light_source::LightSource, Color, Instance, Vec2, Vec3, Vec4},
     std::{collections::BTreeMap, future::ready, ops::Mul},
     tap::prelude::*,
     tokio::time::Instant,
@@ -75,13 +75,17 @@ pub async fn run() -> Result<()> {
         handle: _handle,
     } = WindowHandle::new(WindowAttributes::default().with_title(concat!(clap::crate_name!(), " ", clap::crate_version!()))).await?;
     let mut game_state = GameState {
-        instances: (0..1)
-            .flat_map(|z| (0..1).map(move |x| (x, z)))
+        light_sources: vec![LightSource {
+            position: Vec4::new(0., 1., 0., 1.),
+            color: Color([1., 1., 1., 1.]),
+        }],
+        instances: (0..10)
+            .flat_map(|z| (0..10).map(move |x| (x, z)))
             .map(|(x, z)| Vec3::new(x as _, 0., z as _))
             .map(|v| v * 5.)
             .enumerate()
             .map(|(idx, position)| {
-                Quat::from_rotation_z((idx as f32).mul(15.).to_radians()).pipe(|rotation| Instance {
+                Quat::from_axis_angle(position.normalize_or(Vec3::Z), (idx as f32).mul(3.).to_radians()).pipe(|rotation| Instance {
                     position: position.extend(1.),
                     rotation,
                 })

@@ -18,7 +18,7 @@ macro_rules! bind_group_layout {
                 self::$name
                     .get_or_init(|| {
                         tracing::debug!("registering new layout: {:#?}", $layout);
-                        device()
+                        $crate::run::rendering::wgpu_ext::global_context::device()
                             .create_bind_group_layout(&$layout)
                             .pipe(Box::new)
                             .pipe(Box::leak)

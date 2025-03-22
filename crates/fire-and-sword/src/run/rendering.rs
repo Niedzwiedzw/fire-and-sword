@@ -8,6 +8,7 @@ use {
     camera::CameraPlugin,
     instance::InstancePlugin,
     itertools::Itertools,
+    light_source::LightSourcePlugin,
     model::{material::MaterialPlugin, mesh::MeshPlugin, Model, RenderPassDrawModelExt},
     std::{iter::once, ops::Range},
     tap::prelude::*,
@@ -24,6 +25,7 @@ pub mod wgpu_ext;
 
 pub mod camera;
 pub mod instance;
+pub mod light_source;
 pub mod model;
 pub mod texture;
 
@@ -45,12 +47,20 @@ pub struct State<'a> {
     pub render_pipeline: wgpu::RenderPipeline,
     pub camera_plugin: CameraPlugin,
     pub instance_plugin: InstancePlugin,
+    pub light_source_plugin: LightSourcePlugin,
     pub depth_texture: texture::Texture,
     pub obj_model: Model,
 }
 
 impl<'a> State<'a> {
-    pub async fn new(window: &'a dyn Window, GameState { camera, instances }: &GameState) -> Result<Self> {
+    pub async fn new(
+        window: &'a dyn Window,
+        GameState {
+            camera,
+            instances,
+            light_sources,
+        }: &GameState,
+    ) -> Result<Self> {
         let size = window.surface_size();
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
             backends: wgpu::Backends::PRIMARY,
@@ -101,7 +111,7 @@ impl<'a> State<'a> {
                 &wgpu::DeviceDescriptor {
                     label: Some("main device"),
                     required_features: wgpu::Features::SPIRV_SHADER_PASSTHROUGH | wgpu::Features::MAPPABLE_PRIMARY_BUFFERS,
-                    required_limits: wgpu::Limits::default(),
+                    required_limits: wgpu::Limits::default().tap_mut(|limits| limits.max_bind_groups = 5),
                     memory_hints: Default::default(),
                 },
                 None,
@@ -118,6 +128,7 @@ impl<'a> State<'a> {
 
         let camera_plugin = CameraPlugin::new(camera);
         let instance_plugin = InstancePlugin::new(instances);
+        let light_source_plugin = LightSourcePlugin::new(light_sources);
 
         let render_pipeline_layout = device().create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Render Pipeline Layout"),
@@ -130,6 +141,8 @@ impl<'a> State<'a> {
                 MaterialPlugin::bind_group_layout(),
                 // 3
                 InstancePlugin::bind_group_layout(),
+                // 4
+                LightSourcePlugin::bind_group_layout(),
             ],
             push_constant_ranges: &[],
         });
@@ -181,7 +194,7 @@ impl<'a> State<'a> {
             cache: None,
         });
 
-        let obj_model = Model::load_learn_wgpu_way("scavenger.obj").context("loading scavenger")?;
+        let obj_model = Model::load_learn_wgpu_way("cube.obj").context("loading cube")?;
 
         Ok(Self {
             surface,
@@ -191,6 +204,7 @@ impl<'a> State<'a> {
             render_pipeline,
             camera_plugin,
             instance_plugin,
+            light_source_plugin,
             depth_texture,
             obj_model,
         })
@@ -220,7 +234,14 @@ impl<'a> State<'a> {
     }
 
     #[instrument(skip_all)]
-    pub async fn render(&mut self, GameState { camera, instances }: &GameState) -> Result<()> {
+    pub async fn render(
+        &mut self,
+        GameState {
+            camera,
+            instances,
+            light_sources,
+        }: &GameState,
+    ) -> Result<()> {
         trace!("flushing camera");
         // FLUSH CAMERA
         let camera = camera.get_view_projection();
@@ -237,6 +258,17 @@ impl<'a> State<'a> {
                 cloned![instances];
                 move |current| {
                     current.copy_from_slice(&instances);
+                }
+            })
+            .await
+            .context("updating instances")?;
+
+        self.light_source_plugin
+            .buffer
+            .write(0..(light_sources.len() as _), {
+                cloned![light_sources];
+                move |current| {
+                    current.copy_from_slice(&light_sources);
                 }
             })
             .await
@@ -282,6 +314,7 @@ impl<'a> State<'a> {
                                     pass.set_pipeline(&self.render_pipeline);
                                     pass.set_bind_group(0, &self.camera_plugin.bind_group, &[]);
                                     pass.set_bind_group(3, &self.instance_plugin.bind_group, &[]);
+                                    pass.set_bind_group(4, &self.light_source_plugin.bind_group, &[]);
                                     pass.draw_mesh_instanced(self.obj_model.draw(|m| m.first()), 0..instances.len() as u32);
                                 })
                                 .pipe(drop)

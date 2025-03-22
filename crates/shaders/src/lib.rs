@@ -6,20 +6,60 @@
 #[allow(unused_imports)]
 use spirv_std::num_traits::Float;
 use {
-    glam::{Affine3A, Mat4, Vec4Swizzles},
-    shader_types::{model::ModelVertex, Instance},
+    glam::{Affine3A, Mat4, Vec3, Vec4Swizzles},
+    shader_types::{light_source::LightSource, model::ModelVertex, Color, Instance},
     spirv_std::{glam::Vec4, image::Image2d, spirv, Sampler},
 };
 
 #[spirv(fragment)]
-/// texture: [config::TEXTURE] (0, 1)
 pub fn main_fs(
+    #[spirv(uniform, descriptor_set = 0, binding = 0)] camera: &Mat4,
     #[spirv(descriptor_set = 2, binding = 0)] image: &Image2d,
     #[spirv(descriptor_set = 2, binding = 1)] sampler: &Sampler,
-    input: ModelVertex,
+    #[spirv(storage_buffer, descriptor_set = 4, binding = 0)] light_sources: &[LightSource],
+    ModelVertex {
+        position: pixel_position,
+        normal,
+        tex_coords,
+        padding: _,
+    }: ModelVertex,
     output: &mut Vec4,
 ) {
-    *output = image.sample(*sampler, input.tex_coords);
+    let normal = normal.normalize();
+    let image_color = image.sample(*sampler, tex_coords);
+    {
+        let mut lighting = Vec3::new(0., 0., 0.);
+
+        // no iterators, need to use loop
+        let mut idx = 0;
+        loop {
+            if idx == light_sources.len() {
+                break;
+            }
+            let LightSource {
+                position: mut light_source,
+                color: Color([r, g, b, _a]),
+            } = light_sources[idx];
+            light_source = *camera * light_source;
+
+            let light_color = Vec3::new(r, g, b);
+
+            // AMBIENT
+            let ambient = light_color * 0.1;
+            lighting += ambient;
+
+            // DIFFUSE
+            let diffuse_strength = (pixel_position - light_source)
+                .xyz()
+                .dot(normal.xyz())
+                .max(0.);
+            let diffuse = diffuse_strength * light_color;
+            lighting += diffuse * 0.1;
+
+            idx += 1;
+        }
+        *output = image_color * lighting.extend(1.);
+    }
 }
 
 #[spirv(vertex)]
@@ -35,6 +75,7 @@ pub fn main_vs(
     let mut vertex = input[in_vertex_index as usize];
     let instance = instances[in_instance_index as usize];
     vertex.position = *camera * (instance.position.xyz() + Affine3A::from_quat(instance.rotation).transform_point3(vertex.position.xyz())).extend(1.);
+    vertex.normal = (Affine3A::from_quat(instance.rotation).transform_vector3(vertex.normal.xyz())).extend(0.);
 
     *out_pos = vertex.position;
     *output = vertex;

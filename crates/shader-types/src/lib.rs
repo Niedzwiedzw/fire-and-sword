@@ -20,3 +20,18 @@ pub struct Instance {
 }
 
 pub mod model;
+
+pub mod light_source {
+    use {
+        crate::Color,
+        bytemuck::{Pod, Zeroable},
+        glam::Vec4,
+    };
+
+    #[derive(Default, Clone, Copy, Debug, Pod, Zeroable)]
+    #[repr(C)]
+    pub struct LightSource {
+        pub position: Vec4,
+        pub color: Color,
+    }
+}

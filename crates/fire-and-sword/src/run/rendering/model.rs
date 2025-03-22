@@ -4,7 +4,7 @@ use {
     material::{LoadedMaterial, MaterialPlugin},
     mesh::{LoadedMesh, MeshPlugin},
     nonempty::NonEmpty,
-    shader_types::{model::ModelVertex, padding::pad, Vec2, Vec4},
+    shader_types::{model::ModelVertex, padding::pad, Vec2, Vec3, Vec4},
     std::{
         fs::read_to_string,
         io::{BufReader, Cursor},
@@ -85,26 +85,48 @@ impl Model {
             .map(|m| {
                 let vertices = (0..m.mesh.positions.len() / 3)
                     .map(|i| {
+                        const UP: Vec4 = Vec4::new(0., 1., 0., 0.);
+
+                        let normal = if m.mesh.normals.is_empty() {
+                            // Assume every 3 vertices form a triangle, and i is the vertex index
+                            let tri_idx = i - (i % 3); // Round down to the start of the triangle
+                            let v0 = Vec3::new(
+                                m.mesh.positions[(tri_idx * 3) % m.mesh.positions.len()],
+                                m.mesh.positions[(tri_idx * 3 + 1) % m.mesh.positions.len()],
+                                m.mesh.positions[(tri_idx * 3 + 2) % m.mesh.positions.len()],
+                            );
+                            let v1 = Vec3::new(
+                                m.mesh.positions[(tri_idx * 3 + 3) % m.mesh.positions.len()],
+                                m.mesh.positions[(tri_idx * 3 + 4) % m.mesh.positions.len()],
+                                m.mesh.positions[(tri_idx * 3 + 5) % m.mesh.positions.len()],
+                            );
+                            let v2 = Vec3::new(
+                                m.mesh.positions[(tri_idx * 3 + 6) % m.mesh.positions.len()],
+                                m.mesh.positions[(tri_idx * 3 + 7) % m.mesh.positions.len()],
+                                m.mesh.positions[(tri_idx * 3 + 8) % m.mesh.positions.len()],
+                            );
+                            // Compute edges
+                            let edge1 = v1 - v0;
+                            let edge2 = v2 - v0;
+                            // Cross product for normal
+                            let n = edge1.cross(edge2).normalize_or_zero(); // Normalize, handle degenerate case
+                            Vec4::new(n.x, n.y, n.z, 0.0)
+                        } else {
+                            Vec4::new(m.mesh.normals[i * 3], m.mesh.normals[i * 3 + 1], m.mesh.normals[i * 3 + 2], 0.0)
+                        };
+
                         if m.mesh.texcoords.is_empty() {
                             ModelVertex {
                                 position: Vec4::new(m.mesh.positions[i * 3], m.mesh.positions[i * 3 + 1], m.mesh.positions[i * 3 + 2], 0.0),
                                 tex_coords: Vec2::new(0.0, 0.0), // Default texture coordinates
-                                normal: if m.mesh.normals.is_empty() {
-                                    Vec4::new(0.0, 0.0, 0.0, 0.0)
-                                } else {
-                                    Vec4::new(m.mesh.normals[i * 3], m.mesh.normals[i * 3 + 1], m.mesh.normals[i * 3 + 2], 0.0)
-                                },
+                                normal,
                                 padding: pad(()),
                             }
                         } else {
                             ModelVertex {
                                 position: Vec4::new(m.mesh.positions[i * 3], m.mesh.positions[i * 3 + 1], m.mesh.positions[i * 3 + 2], 0.0),
                                 tex_coords: Vec2::new(m.mesh.texcoords[i * 2], 1.0 - m.mesh.texcoords[i * 2 + 1]),
-                                normal: if m.mesh.normals.is_empty() {
-                                    Vec4::new(0.0, 0.0, 0.0, 0.0)
-                                } else {
-                                    Vec4::new(m.mesh.normals[i * 3], m.mesh.normals[i * 3 + 1], m.mesh.normals[i * 3 + 2], 0.0)
-                                },
+                                normal,
                                 padding: pad(()),
                             }
                         }
