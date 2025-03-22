@@ -3,7 +3,7 @@ use {
     crate::{
         cloned,
         game::GameState,
-        run::rendering::wgpu_ext::device::{device, init_device},
+        run::rendering::wgpu_ext::global_context::{device, init_device},
     },
     anyhow::{Context, Result},
     camera::CameraPlugin,
@@ -17,7 +17,7 @@ use {
     wgpu::{util::DeviceExt, Color, CommandEncoder},
     wgpu_ext::{
         bind_group::HasBindGroup,
-        device::{init_queue, queue},
+        global_context::{init_queue, queue},
     },
     winit::{dpi::PhysicalSize, window::Window},
 };

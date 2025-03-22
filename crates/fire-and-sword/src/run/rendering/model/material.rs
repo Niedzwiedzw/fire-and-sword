@@ -2,7 +2,7 @@ use crate::{
     bind_group_layout,
     run::rendering::{
         texture::Texture,
-        wgpu_ext::{bind_group::HasBindGroup, device::device},
+        wgpu_ext::{bind_group::HasBindGroup, global_context::device},
     },
 };
 

@@ -1,5 +1,5 @@
 use {
-    super::wgpu_ext::device::{device, queue},
+    super::wgpu_ext::global_context::{device, queue},
     anyhow::{Context, Result},
     tap::prelude::*,
 };

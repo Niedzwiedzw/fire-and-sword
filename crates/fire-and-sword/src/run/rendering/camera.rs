@@ -1,5 +1,5 @@
 use {
-    super::wgpu_ext::{bind_group::HasBindGroup, buffer::uniform::UniformBuffer, device::device},
+    super::wgpu_ext::{bind_group::HasBindGroup, buffer::uniform::UniformBuffer, global_context::device},
     crate::bind_group_layout,
     glam::{Mat4, Vec3},
     shader_types::glam,

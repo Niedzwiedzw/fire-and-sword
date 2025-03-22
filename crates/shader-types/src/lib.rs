@@ -44,3 +44,10 @@ pub mod model {
         pub padding: WithPadding<2, ()>,
     }
 }
+
+pub mod config {
+    pub const INSTANCE: u32 = 0;
+    pub const MESH: u32 = 1;
+    pub const TEXTURE: u32 = 2;
+    pub const CAMERA: u32 = 4;
+}

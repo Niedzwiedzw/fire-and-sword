@@ -1,5 +1,5 @@
 use {
-    super::wgpu_ext::{bind_group::HasBindGroup, buffer::storage::StorageBuffer, device::device},
+    super::wgpu_ext::{bind_group::HasBindGroup, buffer::storage::StorageBuffer, global_context::device},
     crate::bind_group_layout,
     shader_types::Instance,
     tap::prelude::*,

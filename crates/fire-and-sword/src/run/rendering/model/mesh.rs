@@ -4,7 +4,7 @@ use {
         run::rendering::wgpu_ext::{
             bind_group::HasBindGroup,
             buffer::{index::IndexBuffer, storage::StorageBuffer},
-            device::device,
+            global_context::device,
         },
     },
     shader_types::model::ModelVertex,

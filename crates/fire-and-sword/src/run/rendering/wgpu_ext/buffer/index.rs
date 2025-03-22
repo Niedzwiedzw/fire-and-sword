@@ -1,6 +1,6 @@
 use {
     super::AsyncBufferWriteExt,
-    crate::run::rendering::wgpu_ext::device::device,
+    crate::run::rendering::wgpu_ext::global_context::device,
     anyhow::{Context, Result},
     shader_types::bytemuck::{self},
     tap::prelude::*,
