@@ -5,6 +5,7 @@ use {
     camera::Camera,
     futures::channel::oneshot,
     itertools::Itertools,
+    model::{DeviceModelExt, DrawModel, Model},
     shader_types::{
         bytemuck::{self, AnyBitPattern, NoUninit},
         glam::Quat,
@@ -22,6 +23,7 @@ use {
 };
 
 pub mod camera;
+pub mod model;
 pub mod texture;
 
 #[extension_traits::extension(pub trait RangeMapExt)]
@@ -90,6 +92,8 @@ pub struct State<'a> {
     pub camera_buffer: wgpu::Buffer,
     pub instance_buffer: wgpu::Buffer,
     pub instances: Vec<Instance>,
+    pub depth_texture: texture::Texture,
+    pub obj_model: Model,
 }
 
 impl<'a> State<'a> {
@@ -119,6 +123,7 @@ impl<'a> State<'a> {
             .find_or_first(|f| f.is_srgb())
             .copied()
             .context("no surface format available")?;
+
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format: surface_format,
@@ -152,7 +157,7 @@ impl<'a> State<'a> {
             .context("requesting device and queue")?;
 
         surface.configure(&device, &config);
-
+        let depth_texture = texture::Texture::depth_texture(&device, (config.width, config.height), "depth texture");
         let diffuse_texture = texture::Texture::from_bytes(&device, &queue, include_bytes!("../../../../assets/happy-tree.png"), "happy-tree.png")
             .context("loading happy little tree")?;
         info!("loaded happy tree");
@@ -179,12 +184,14 @@ impl<'a> State<'a> {
                 usage: wgpu::BufferUsages::STORAGE,
             })
         };
+
         const NUM_INSTANCES: u32 = 10;
         const INSTANCE_DISPLACEMENT: Vec3 = Vec3::new(NUM_INSTANCES as f32 * 0.5, 0.0, NUM_INSTANCES as f32 * 0.5);
 
         let instances = (0..NUM_INSTANCES)
             .flat_map(|z| (0..NUM_INSTANCES).map(move |x| (x, z)))
             .map(|(x, z)| Vec3::new(x as _, 0., z as _))
+            .map(|v| v * 5.)
             .map(|position| position - INSTANCE_DISPLACEMENT)
             .enumerate()
             .map(|(idx, position)| {
@@ -224,20 +231,10 @@ impl<'a> State<'a> {
                     usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::MAP_WRITE,
                 })
             });
+
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("Vertex Bind Group Layout"),
             entries: &[
-                // VERTEX PULLING
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
                 // TEXTURE
                 wgpu::BindGroupLayoutEntry {
                     binding: 1,
@@ -284,11 +281,6 @@ impl<'a> State<'a> {
             label: Some("Pipeline layout"),
             layout: &bind_group_layout,
             entries: &[
-                // VERTEX PULLING
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: vertex_buffer.as_entire_binding(),
-                },
                 // TEXTURE
                 wgpu::BindGroupEntry {
                     binding: 1,
@@ -313,7 +305,7 @@ impl<'a> State<'a> {
 
         let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Render Pipeline Layout"),
-            bind_group_layouts: &[&bind_group_layout],
+            bind_group_layouts: &[&bind_group_layout, &device.mesh_bind_group_layout()],
             push_constant_ranges: &[],
         });
 
@@ -348,7 +340,13 @@ impl<'a> State<'a> {
                 unclipped_depth: false,
                 conservative: false,
             },
-            depth_stencil: None,
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: texture::Texture::DEPTH_FORMAT,
+                depth_write_enabled: true,
+                depth_compare: wgpu::CompareFunction::Less,
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
             multisample: wgpu::MultisampleState {
                 count: 1,
                 mask: !0,
@@ -357,6 +355,8 @@ impl<'a> State<'a> {
             multiview: None,
             cache: None,
         });
+
+        let obj_model = Model::load_learn_wgpu_way("cube.obj", &device, &queue).context("loading cube")?;
 
         Ok(Self {
             surface,
@@ -372,6 +372,8 @@ impl<'a> State<'a> {
             camera_buffer,
             instances,
             instance_buffer,
+            depth_texture,
+            obj_model,
         })
     }
 
@@ -380,6 +382,7 @@ impl<'a> State<'a> {
             self.size = new_size;
             self.config.width = new_size.width;
             self.config.height = new_size.height;
+            self.depth_texture = texture::Texture::depth_texture(&self.device, self.config.pipe_ref(|c| (c.width, c.height)), "depth texture");
             self.surface.configure(&self.device, &self.config);
         }
     }
@@ -396,6 +399,7 @@ impl<'a> State<'a> {
             })
             .with_context(|| format!("running on encoder: {label}"))
     }
+
     #[instrument(skip_all)]
     pub async fn render(&mut self, camera: &Camera) -> Result<()> {
         trace!("flushing camera");
@@ -437,15 +441,21 @@ impl<'a> State<'a> {
                                             }),
                                         },
                                     })],
-                                    depth_stencil_attachment: None,
+                                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                                        view: &self.depth_texture.view,
+                                        depth_ops: Some(wgpu::Operations {
+                                            load: wgpu::LoadOp::Clear(1.),
+                                            store: wgpu::StoreOp::Store,
+                                        }),
+                                        stencil_ops: None,
+                                    }),
                                     timestamp_writes: None,
                                     occlusion_query_set: None,
                                 })
                                 .tap_mut(|pass| {
                                     pass.set_pipeline(&self.render_pipeline);
                                     pass.set_bind_group(0, &self.bind_group, &[]);
-                                    pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-                                    pass.draw_indexed(0..INDICES.len() as _, 0, 0..(self.instances.len() as _));
+                                    pass.draw_mesh_instanced(&self.obj_model.meshes[0], 0..self.instances.len() as u32);
                                 })
                                 .pipe(drop)
                                 .pipe(Ok)
