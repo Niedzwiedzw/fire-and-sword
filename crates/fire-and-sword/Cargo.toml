@@ -25,3 +25,5 @@ shader-types.workspace = true
 image = { version = "0.25.5", features = ["png", "jpeg"] }
 extension-traits = "2.0.0"
 tobj = "4.0.3"
+nutype = "0.6.1"
+nonempty = "0.11.0"

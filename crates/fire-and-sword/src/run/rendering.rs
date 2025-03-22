@@ -1,28 +1,31 @@
 use {
     super::VERTICES,
-    crate::run::INDICES,
+    crate::{
+        cloned,
+        game::GameState,
+        run::rendering::wgpu_ext::device::{device, init_device},
+    },
     anyhow::{Context, Result},
-    camera::Camera,
-    futures::channel::oneshot,
+    camera::CameraPlugin,
+    instance::InstancePlugin,
     itertools::Itertools,
-    model::{DeviceModelExt, DrawModel, Model},
-    shader_types::{
-        bytemuck::{self, AnyBitPattern, NoUninit},
-        glam::Quat,
-        Instance,
-        Vec3,
-    },
-    std::{
-        iter::once,
-        ops::{Mul, Range},
-    },
+    model::{material::MaterialPlugin, mesh::MeshPlugin, Model, RenderPassDrawModelExt},
+    shader_types::bytemuck::{self},
+    std::{iter::once, ops::Range},
     tap::prelude::*,
-    tracing::{error, info, instrument, trace},
-    wgpu::{util::DeviceExt, Color, CommandEncoder, MapMode, WasmNotSend},
+    tracing::{instrument, trace},
+    wgpu::{util::DeviceExt, Color, CommandEncoder},
+    wgpu_ext::{
+        bind_group::HasBindGroup,
+        device::{init_queue, queue},
+    },
     winit::{dpi::PhysicalSize, window::Window},
 };
 
+pub mod wgpu_ext;
+
 pub mod camera;
+pub mod instance;
 pub mod model;
 pub mod texture;
 
@@ -36,68 +39,21 @@ impl<T> Range<T> {
     }
 }
 
-#[extension_traits::extension(pub(crate) trait AsyncBufferWriteExt)]
-impl wgpu::Buffer {
-    async fn write_async<'a, T, F>(&'a self, device: &wgpu::Device, bounds: std::ops::Range<u64>, write: F) -> Result<()>
-    where
-        T: NoUninit + AnyBitPattern + 'a,
-        F: FnOnce(&mut [T]) + WasmNotSend + 'static,
-    {
-        let bounds = bounds.map_range(|address| address * (core::mem::size_of::<T>() as u64));
-        let (tx, rx) = oneshot::channel();
-        self.slice(bounds.clone()).pipe(|slice| {
-            self.clone().pipe(|slice_access| {
-                slice.map_async(MapMode::Write, move |w| {
-                    w.context("bad write")
-                        .and_then(|_| {
-                            let mut slice = slice_access.slice(bounds).get_mapped_range_mut();
-                            let data = bytemuck::try_cast_slice_mut::<_, _>(&mut slice)
-                                .map_err(|bytes| anyhow::anyhow!("{bytes:?}"))
-                                .context("casting failed")?;
-                            write(data);
-                            drop(slice);
-                            slice_access.unmap();
-                            Ok(())
-                        })
-                        .and_then(|_| {
-                            tx.send(())
-                                .map_err(|_| anyhow::anyhow!("send failed"))
-                                .context("sending")
-                        })
-                        .pipe(|r| {
-                            if let Err(reason) = r {
-                                error!("write failed:\n{reason:?}");
-                            }
-                        })
-                })
-            });
-        });
-        device.poll(wgpu::Maintain::Wait);
-        trace!("waiting for async operation to finish");
-        rx.await.context("task cancelled")
-    }
-}
-
 pub struct State<'a> {
     pub surface: wgpu::Surface<'a>,
-    pub device: wgpu::Device,
-    pub queue: wgpu::Queue,
     pub config: wgpu::SurfaceConfiguration,
     pub size: winit::dpi::PhysicalSize<u32>,
     pub window: &'a dyn Window,
     pub render_pipeline: wgpu::RenderPipeline,
     pub vertex_buffer: wgpu::Buffer,
-    pub bind_group: wgpu::BindGroup,
-    pub index_buffer: wgpu::Buffer,
-    pub camera_buffer: wgpu::Buffer,
-    pub instance_buffer: wgpu::Buffer,
-    pub instances: Vec<Instance>,
+    pub camera_plugin: CameraPlugin,
+    pub instance_plugin: InstancePlugin,
     pub depth_texture: texture::Texture,
     pub obj_model: Model,
 }
 
 impl<'a> State<'a> {
-    pub async fn new(window: &'a dyn Window) -> Result<Self> {
+    pub async fn new(window: &'a dyn Window, GameState { camera, instances }: &GameState) -> Result<Self> {
         let size = window.surface_size();
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
             backends: wgpu::Backends::PRIMARY,
@@ -143,7 +99,7 @@ impl<'a> State<'a> {
             desired_maximum_frame_latency: 2,
         };
 
-        let (device, queue) = adapter
+        let (device_handle, queue_handle) = adapter
             .request_device(
                 &wgpu::DeviceDescriptor {
                     label: Some("main device"),
@@ -156,160 +112,41 @@ impl<'a> State<'a> {
             .await
             .context("requesting device and queue")?;
 
-        surface.configure(&device, &config);
-        let depth_texture = texture::Texture::depth_texture(&device, (config.width, config.height), "depth texture");
-        let diffuse_texture = texture::Texture::from_bytes(&device, &queue, include_bytes!("../../../../assets/happy-tree.png"), "happy-tree.png")
-            .context("loading happy little tree")?;
-        info!("loaded happy tree");
-
-        let diffuse_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("diffuse_sampler"),
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Linear,
-            mipmap_filter: wgpu::FilterMode::Nearest,
-            ..Default::default()
-        });
-
+        surface.configure(&device_handle, &config);
+        init_device(device_handle);
+        init_queue(queue_handle);
+        let depth_texture = texture::Texture::depth_texture((config.width, config.height), "depth texture");
         // building the pipeline
-        let shader = unsafe { device.create_shader_module_spirv(&wgpu::include_spirv_raw!("../../../../shaders.spv")) };
+        let shader = unsafe { device().create_shader_module_spirv(&wgpu::include_spirv_raw!("../../../../shaders.spv")) };
 
         // vertex pulling because i dont want to write the layout for a vertex
         let vertex_buffer = {
-            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            device().create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("Vertex buffer"),
                 contents: bytemuck::cast_slice(VERTICES),
                 usage: wgpu::BufferUsages::STORAGE,
             })
         };
 
-        const NUM_INSTANCES: u32 = 10;
-        const INSTANCE_DISPLACEMENT: Vec3 = Vec3::new(NUM_INSTANCES as f32 * 0.5, 0.0, NUM_INSTANCES as f32 * 0.5);
+        let camera_plugin = CameraPlugin::new(camera);
+        let instance_plugin = InstancePlugin::new(instances);
 
-        let instances = (0..NUM_INSTANCES)
-            .flat_map(|z| (0..NUM_INSTANCES).map(move |x| (x, z)))
-            .map(|(x, z)| Vec3::new(x as _, 0., z as _))
-            .map(|v| v * 5.)
-            .map(|position| position - INSTANCE_DISPLACEMENT)
-            .enumerate()
-            .map(|(idx, position)| {
-                Quat::from_rotation_z((idx as f32).mul(15.).to_radians()).pipe(|rotation| Instance {
-                    position: position.extend(1.),
-                    rotation,
-                })
-            })
-            .inspect(|instance| info!("{:?}", instance.position))
-            .collect_vec();
-        let instance_buffer = {
-            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("Vertex buffer"),
-                contents: instances.pipe_deref(bytemuck::cast_slice),
-                usage: wgpu::BufferUsages::STORAGE,
-            })
-        };
-
-        let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Index buffer"),
-            contents: bytemuck::cast_slice(INDICES),
-            usage: wgpu::BufferUsages::INDEX,
-        });
-
-        let camera_buffer = Camera::new([10., 0., 0.].into())
-            .pipe(|camera| {
-                camera.get_view_projection(
-                    window
-                        .surface_size()
-                        .pipe(|PhysicalSize { width, height }| (width as _, height as _)),
-                )
-            })
-            .pipe(|camera| {
-                device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("Camera buffer"),
-                    contents: bytemuck::cast_slice(&[camera]),
-                    usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::MAP_WRITE,
-                })
-            });
-
-        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("Vertex Bind Group Layout"),
-            entries: &[
-                // TEXTURE
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        multisampled: false,
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-                // CAMERA
-                wgpu::BindGroupLayoutEntry {
-                    binding: 3,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                // INSTANCES
-                wgpu::BindGroupLayoutEntry {
-                    binding: 4,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-            ],
-        });
-
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Pipeline layout"),
-            layout: &bind_group_layout,
-            entries: &[
-                // TEXTURE
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::TextureView(&diffuse_texture.view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: wgpu::BindingResource::Sampler(&diffuse_sampler),
-                },
-                // CAMERA
-                wgpu::BindGroupEntry {
-                    binding: 3,
-                    resource: camera_buffer.as_entire_binding(),
-                },
-                // INSTANCE
-                wgpu::BindGroupEntry {
-                    binding: 4,
-                    resource: instance_buffer.as_entire_binding(),
-                },
-            ],
-        });
-
-        let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        let render_pipeline_layout = device().create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Render Pipeline Layout"),
-            bind_group_layouts: &[&bind_group_layout, &device.mesh_bind_group_layout()],
+            bind_group_layouts: &[
+                // 0
+                CameraPlugin::bind_group_layout(),
+                // 1
+                MeshPlugin::bind_group_layout(),
+                // 2
+                MaterialPlugin::bind_group_layout(),
+                // 3
+                InstancePlugin::bind_group_layout(),
+            ],
             push_constant_ranges: &[],
         });
 
-        let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        let render_pipeline = device().create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Render Pipeline"),
             layout: Some(&render_pipeline_layout),
             vertex: wgpu::VertexState {
@@ -356,22 +193,17 @@ impl<'a> State<'a> {
             cache: None,
         });
 
-        let obj_model = Model::load_learn_wgpu_way("cube.obj", &device, &queue).context("loading cube")?;
+        let obj_model = Model::load_learn_wgpu_way("cube.obj").context("loading cube")?;
 
         Ok(Self {
             surface,
-            device,
-            queue,
             config,
             size,
             window,
             render_pipeline,
             vertex_buffer,
-            index_buffer,
-            bind_group,
-            camera_buffer,
-            instances,
-            instance_buffer,
+            camera_plugin,
+            instance_plugin,
             depth_texture,
             obj_model,
         })
@@ -382,39 +214,46 @@ impl<'a> State<'a> {
             self.size = new_size;
             self.config.width = new_size.width;
             self.config.height = new_size.height;
-            self.depth_texture = texture::Texture::depth_texture(&self.device, self.config.pipe_ref(|c| (c.width, c.height)), "depth texture");
-            self.surface.configure(&self.device, &self.config);
+            self.depth_texture = texture::Texture::depth_texture(self.config.pipe_ref(|c| (c.width, c.height)), "depth texture");
+            self.surface.configure(device(), &self.config);
         }
     }
 
-    pub fn with_command_encoder(&self, label: &str, with_command_encoder: impl FnOnce(&mut CommandEncoder) -> Result<()>) -> Result<()> {
-        self.device
+    pub fn with_command_encoder(label: &str, with_command_encoder: impl FnOnce(&mut CommandEncoder) -> Result<()>) -> Result<()> {
+        device()
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some(label) })
             .pipe(|mut encoder| {
                 with_command_encoder(&mut encoder)
                     .with_context(|| format!("running operation [{label}] with encoder"))
                     .map(|_| {
-                        self.queue.submit(once(encoder.finish()));
+                        queue().submit(once(encoder.finish()));
                     })
             })
             .with_context(|| format!("running on encoder: {label}"))
     }
 
     #[instrument(skip_all)]
-    pub async fn render(&mut self, camera: &Camera) -> Result<()> {
+    pub async fn render(&mut self, GameState { camera, instances }: &GameState) -> Result<()> {
         trace!("flushing camera");
         // FLUSH CAMERA
-        let camera = camera.get_view_projection(
-            self.window
-                .surface_size()
-                .pipe(|PhysicalSize { width, height }| (width as _, height as _)),
-        );
-        self.camera_buffer
-            .write_async(&self.device, 0..1u64, move |buf| {
+        let camera = camera.get_view_projection();
+        self.camera_plugin
+            .buffer
+            .write(0..1u64, move |buf| {
                 buf[0] = camera;
             })
             .await
             .context("writing camera")?;
+        self.instance_plugin
+            .buffer
+            .write(0..(instances.len() as _), {
+                cloned![instances];
+                move |current| {
+                    current.copy_from_slice(&instances);
+                }
+            })
+            .await
+            .context("updating instances")?;
         trace!("writing to surface");
         self.surface
             .get_current_texture()
@@ -424,7 +263,7 @@ impl<'a> State<'a> {
                     .texture
                     .create_view(&wgpu::TextureViewDescriptor::default())
                     .pipe(|texture_view| {
-                        self.with_command_encoder("rendering_to_texture", |encoder| {
+                        Self::with_command_encoder("rendering_to_texture", |encoder| {
                             encoder
                                 .begin_render_pass(&wgpu::RenderPassDescriptor {
                                     label: Some("render pass"),
@@ -454,8 +293,9 @@ impl<'a> State<'a> {
                                 })
                                 .tap_mut(|pass| {
                                     pass.set_pipeline(&self.render_pipeline);
-                                    pass.set_bind_group(0, &self.bind_group, &[]);
-                                    pass.draw_mesh_instanced(&self.obj_model.meshes[0], 0..self.instances.len() as u32);
+                                    pass.set_bind_group(0, &self.camera_plugin.bind_group, &[]);
+                                    pass.set_bind_group(3, &self.instance_plugin.bind_group, &[]);
+                                    pass.draw_mesh_instanced(self.obj_model.draw(|m| m.first()), 0..instances.len() as u32);
                                 })
                                 .pipe(drop)
                                 .pipe(Ok)

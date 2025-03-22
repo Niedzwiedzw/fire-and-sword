@@ -1,70 +1,53 @@
 use {
     super::texture::Texture,
     anyhow::Context,
-    shader_types::{bytemuck, model::ModelVertex, padding::pad, Vec2, Vec4},
+    material::{LoadedMaterial, MaterialPlugin},
+    mesh::{LoadedMesh, MeshPlugin},
+    nonempty::NonEmpty,
+    shader_types::{model::ModelVertex, padding::pad, Vec2, Vec4},
     std::{
         fs::read_to_string,
         io::{BufReader, Cursor},
         ops::Range,
         path::{Path, PathBuf},
     },
-    wgpu::{util::DeviceExt, BindGroupLayout, Device, RenderPass},
+    tap::prelude::*,
+    wgpu::RenderPass,
 };
 
-pub struct Material {
-    pub name: String,
-    pub diffuse_texture: Texture,
-    pub bind_group: wgpu::BindGroup,
-}
-
-pub struct Mesh {
-    pub name: String,
-    pub vertex_buffer: wgpu::Buffer,
-    pub index_buffer: wgpu::Buffer,
-    pub bind_group_layout: wgpu::BindGroupLayout,
-    pub bind_group: wgpu::BindGroup,
-    pub num_elements: u32,
-    pub material: usize,
-}
-
 pub struct Model {
-    pub meshes: Vec<Mesh>,
-    pub materials: Vec<Material>,
+    pub meshes: NonEmpty<LoadedMesh>,
+    pub materials: NonEmpty<LoadedMaterial>,
 }
 
-pub fn load_texture(file_name: &Path, device: &wgpu::Device, queue: &wgpu::Queue) -> anyhow::Result<Texture> {
+pub fn load_texture(file_name: &Path) -> anyhow::Result<Texture> {
     let data = std::fs::read(file_name).with_context(|| format!("loading file at [{file_name:?}]"))?;
-    Texture::from_bytes(device, queue, &data, &file_name.display().to_string())
+    Texture::from_bytes(&data, &file_name.display().to_string())
 }
 
 fn assets_root() -> PathBuf {
     PathBuf::from("assets")
 }
 
-#[extension_traits::extension(pub trait DeviceModelExt)]
-impl Device {
-    fn mesh_bind_group_layout(&self) -> BindGroupLayout {
-        self.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("Mesh Vertex Buffer Bind Group Layout"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Storage { read_only: true },
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-        })
-    }
+pub mod material;
+pub mod mesh;
+
+pub struct ModelDraw<'a> {
+    pub mesh: &'a LoadedMesh,
+    pub material: &'a LoadedMaterial,
 }
 
 impl Model {
+    pub fn draw<'a, F: FnOnce(&'a NonEmpty<LoadedMaterial>) -> &'a LoadedMaterial>(&'a self, with_material: F) -> ModelDraw<'a> {
+        ModelDraw {
+            mesh: self.meshes.first(),
+            material: with_material(&self.materials),
+        }
+    }
     /// this is absolutely horrible but it's for tutorial so whatever
     /// again I hate this and I pledge to get rid of this on first
     /// occasion
-    pub fn load_learn_wgpu_way(file_name: &str, device: &wgpu::Device, queue: &wgpu::Queue) -> anyhow::Result<Self> {
+    pub fn load_learn_wgpu_way(file_name: &str) -> anyhow::Result<Self> {
         let file_name = assets_root().join(file_name);
         let obj_text = read_to_string(&file_name).with_context(|| format!("loading text from [{file_name:?}]"))?;
         let obj_cursor = Cursor::new(obj_text);
@@ -89,50 +72,12 @@ impl Model {
                 .diffuse_texture
                 .context("no diffuse texture name")
                 .map(|texture| assets_root().join(texture))
-                .and_then(|path| load_texture(&path, device, queue).context("loading texture"))?;
-            let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-                layout: &device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                    label: Some("bind group layout"),
-                    entries: &[
-                        // TEXTURE
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 0,
-                            visibility: wgpu::ShaderStages::FRAGMENT,
-                            ty: wgpu::BindingType::Texture {
-                                multisampled: false,
-                                view_dimension: wgpu::TextureViewDimension::D2,
-                                sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                            },
-                            count: None,
-                        },
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 1,
-                            visibility: wgpu::ShaderStages::FRAGMENT,
-                            ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                            count: None,
-                        },
-                    ],
-                }),
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: wgpu::BindingResource::TextureView(&diffuse_texture.view),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: wgpu::BindingResource::Sampler(&diffuse_texture.sampler),
-                    },
-                ],
-                label: None,
-            });
+                .and_then(|path| load_texture(&path).context("loading texture"))?;
+            let material = MaterialPlugin::load(&m.name, diffuse_texture);
 
-            materials.push(Material {
-                name: m.name,
-                diffuse_texture,
-                bind_group,
-            })
+            materials.push(material)
         }
-
+        let materials = NonEmpty::from_vec(materials).context("empty meshes?")?;
         let meshes = models
             .into_iter()
             .map(|m| {
@@ -155,51 +100,27 @@ impl Model {
                         }
                     })
                     .collect::<Vec<_>>();
-
-                let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some(&format!("{:?} Vertex Buffer", file_name)),
-                    contents: bytemuck::cast_slice(&vertices),
-                    usage: wgpu::BufferUsages::STORAGE,
-                });
-                let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some(&format!("{:?} Index Buffer", file_name)),
-                    contents: bytemuck::cast_slice(&m.mesh.indices),
-                    usage: wgpu::BufferUsages::INDEX,
-                });
-                let bind_group_layout = device.mesh_bind_group_layout();
-
-                let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-                    layout: &bind_group_layout,
-                    label: Some(&format!("{:?} Vertex Buffer Bind Group", file_name)),
-                    entries: &[wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: vertex_buffer.as_entire_binding(),
-                    }],
-                });
-                Mesh {
-                    name: file_name.display().to_string(),
-                    vertex_buffer,
-                    index_buffer,
-                    bind_group_layout,
-                    bind_group,
-                    num_elements: m.mesh.indices.len() as u32,
-                    material: m.mesh.material_id.unwrap_or(0),
-                }
+                MeshPlugin::load_mesh(&vertices, &m.mesh.indices)
             })
-            .collect::<Vec<_>>();
+            .pipe(NonEmpty::collect)
+            .context("empty meshes")?;
 
         Ok(Model { meshes, materials })
     }
 }
 
-#[extension_traits::extension(pub trait DrawModel)]
+#[extension_traits::extension(pub trait RenderPassDrawModelExt)]
 impl<'a> RenderPass<'a> {
-    fn draw_mesh_instanced(&mut self, mesh: &Mesh, instances: Range<u32>) {
-        self.set_bind_group(1, &mesh.bind_group, &[]);
-        self.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-        self.draw_indexed(0..mesh.num_elements, 0, instances);
+    fn draw_mesh_instanced(&mut self, model: ModelDraw<'_>, instances: Range<u32>) {
+        // MESH (1)
+        self.set_bind_group(1, &model.mesh.bind_group, &[]);
+        self.set_index_buffer(model.mesh.index_buffer.as_ref().slice(..), wgpu::IndexFormat::Uint32);
+        // MATERIAL (2)
+        self.set_bind_group(2, &model.material.bind_group, &[]);
+
+        self.draw_indexed(0..model.mesh.index_buffer.len(), 0, instances);
     }
-    fn draw_mesh(&mut self, mesh: &Mesh) {
+    fn draw_mesh(&mut self, mesh: ModelDraw<'_>) {
         self.draw_mesh_instanced(mesh, 0..1);
     }
 }

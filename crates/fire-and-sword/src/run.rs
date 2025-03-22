@@ -1,13 +1,15 @@
 use {
     self::window::WindowHandle,
+    crate::game::GameState,
     anyhow::{Context, Result},
     futures::{FutureExt, Stream, StreamExt},
+    itertools::Itertools,
     rendering::camera::{Camera, SENSITIVITY},
-    shader_types::{padding::pad, Vec2, Vec3, Vec4, Vertex},
-    std::{collections::BTreeMap, future::ready},
+    shader_types::{glam::Quat, padding::pad, Instance, Vec2, Vec3, Vec4, Vertex},
+    std::{collections::BTreeMap, future::ready, ops::Mul},
     tap::prelude::*,
     tokio::time::Instant,
-    tracing::{instrument, warn},
+    tracing::{info, instrument, warn},
     window::WindowingEvent,
     winit::{
         dpi::PhysicalSize,
@@ -54,12 +56,6 @@ const VERTICES: &[Vertex] = &[
     }, // E
 ];
 
-#[rustfmt::skip]
-const INDICES: &[u16] = &[
-    0, 1, 4,
-    1, 2, 4,
-    2, 3, 4,
-];
 fn direction_from_look_and_speed(look: Vec3, speed: Vec3) -> Vec3 {
     // Normalize the look vector to ensure it's a unit vector (forward direction)
     let forward = look.normalize();
@@ -107,12 +103,31 @@ pub async fn run() -> Result<()> {
         events,
         handle: _handle,
     } = WindowHandle::new(WindowAttributes::default().with_title(concat!(clap::crate_name!(), " ", clap::crate_version!()))).await?;
+    let mut game_state = GameState {
+        instances: (0..20)
+            .flat_map(|z| (0..20).map(move |x| (x, z)))
+            .map(|(x, z)| Vec3::new(x as _, 0., z as _))
+            .map(|v| v * 5.)
+            .enumerate()
+            .map(|(idx, position)| {
+                Quat::from_rotation_z((idx as f32).mul(15.).to_radians()).pipe(|rotation| Instance {
+                    position: position.extend(1.),
+                    rotation,
+                })
+            })
+            .inspect(|instance| info!("{:?}", instance.position))
+            .collect_vec(),
+        camera: Camera::new(
+            Default::default(),
+            window
+                .surface_size()
+                .pipe_ref(|s| (s.width as _, s.height as _)),
+        ),
+    };
 
-    let mut state = rendering::State::new(&*window)
+    let mut state = rendering::State::new(&*window, &game_state)
         .await
         .context("creating renderer state")?;
-
-    let mut camera = Camera::new(Default::default());
 
     let mut keyboard_state = KeyboardState::default();
 
@@ -146,7 +161,7 @@ pub async fn run() -> Result<()> {
                 .pipe(futures::stream::iter)
                 .flatten_unordered(8)
         });
-    state.render(&camera).await?;
+    state.render(&game_state).await?;
     while let Some(event) = events.next().await {
         match event {
             AppEvent::MouseMoved(by) => {
@@ -157,7 +172,9 @@ pub async fn run() -> Result<()> {
                 {
                     tracing::warn!("could not grab cursor:\n{reason:?}");
                 }
-                camera.update_rotation(by.x * SENSITIVITY, by.y * SENSITIVITY);
+                game_state
+                    .camera
+                    .update_rotation(by.x * SENSITIVITY, by.y * SENSITIVITY);
             }
             AppEvent::Key(key, state) => {
                 keyboard_state.0.insert(key, state);
@@ -165,7 +182,7 @@ pub async fn run() -> Result<()> {
             AppEvent::Redraw => {
                 state.window.request_redraw();
                 state
-                    .render(&camera)
+                    .render(&game_state)
                     .await
                     .context("rendering failed")
                     .or_else(|reason| match reason {
@@ -192,10 +209,10 @@ pub async fn run() -> Result<()> {
                     _ => None,
                 })
                 .fold(Vec3::ZERO, |acc, next| acc + next)
-                .pipe(|speed| direction_from_look_and_speed(camera.look(), speed))
+                .pipe(|speed| direction_from_look_and_speed(game_state.camera.look(), speed))
                 .pipe(|delta| delta * 0.15)
                 .pipe(|delta| {
-                    camera.position_mut(|position| {
+                    game_state.camera.position_mut(|position| {
                         *position += delta;
                     })
                 }),

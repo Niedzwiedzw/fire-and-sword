@@ -1,23 +1,24 @@
 use {
+    super::wgpu_ext::device::{device, queue},
     anyhow::{Context, Result},
     tap::prelude::*,
 };
 
 pub struct Texture {
     #[allow(unused)]
-    pub texture: wgpu::Texture,
-    pub view: wgpu::TextureView,
-    pub sampler: wgpu::Sampler,
+    pub(crate) texture: wgpu::Texture,
+    pub(crate) view: wgpu::TextureView,
+    pub(crate) sampler: wgpu::Sampler,
 }
 
 impl Texture {
     pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
-    pub fn from_bytes(device: &wgpu::Device, queue: &wgpu::Queue, bytes: &[u8], label: &str) -> Result<Self> {
+    pub fn from_bytes(bytes: &[u8], label: &str) -> Result<Self> {
         image::load_from_memory(bytes)
             .context("Bad image")
-            .map(|image| Self::from_image(device, queue, &image, Some(label)))
+            .map(|image| Self::from_image(&image, Some(label)))
     }
-    pub fn depth_texture(device: &wgpu::Device, (width, height): (u32, u32), label: &str) -> Self {
+    pub fn depth_texture((width, height): (u32, u32), label: &str) -> Self {
         wgpu::Extent3d {
             width: width.max(1),
             height: height.max(1),
@@ -35,11 +36,11 @@ impl Texture {
                 view_formats: &[],
             }
             .pipe_ref(|descriptor| {
-                device.create_texture(descriptor).pipe(|texture| {
+                device().create_texture(descriptor).pipe(|texture| {
                     texture
                         .create_view(&wgpu::TextureViewDescriptor::default())
                         .pipe(|view| {
-                            device
+                            device()
                                 .create_sampler(&wgpu::SamplerDescriptor {
                                     // 4.
                                     address_mode_u: wgpu::AddressMode::ClampToEdge,
@@ -59,7 +60,7 @@ impl Texture {
             })
         })
     }
-    pub fn from_image(device: &wgpu::Device, queue: &wgpu::Queue, img: &image::DynamicImage, label: Option<&str>) -> Self {
+    pub fn from_image(img: &image::DynamicImage, label: Option<&str>) -> Self {
         img.pipe(|i| i.to_rgba8())
             .pipe(|diffuse_rgba| {
                 diffuse_rgba
@@ -75,7 +76,7 @@ impl Texture {
                              height,
                              depth_or_array_layers: _,
                          }| {
-                            device
+                            device()
                                 .create_texture(&wgpu::TextureDescriptor {
                                     size,
                                     mip_level_count: 1,
@@ -87,7 +88,7 @@ impl Texture {
                                     view_formats: &[],
                                 })
                                 .pipe(|diffuse_texture| {
-                                    queue
+                                    queue()
                                         .write_texture(
                                             wgpu::TexelCopyTextureInfo {
                                                 texture: &diffuse_texture,
@@ -111,7 +112,7 @@ impl Texture {
             .pipe(|texture| Self {
                 view: texture.create_view(&wgpu::TextureViewDescriptor { label, ..Default::default() }),
                 texture,
-                sampler: device.create_sampler(&wgpu::SamplerDescriptor {
+                sampler: device().create_sampler(&wgpu::SamplerDescriptor {
                     label,
                     address_mode_u: wgpu::AddressMode::ClampToEdge,
                     address_mode_v: wgpu::AddressMode::ClampToEdge,

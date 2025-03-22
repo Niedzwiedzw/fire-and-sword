@@ -3,6 +3,22 @@
 
 use anyhow::{Context, Result};
 
+#[macro_export]
+macro_rules! label {
+    ($title:expr) => {
+        Some(&format!("{}: {}:{} ({})", clap::crate_name!(), file!(), line!(), $title))
+    };
+}
+
+macro_rules! struct_label {
+    () => {
+        $crate::label!(std::any::type_name::<Self>())
+    };
+}
+
+pub mod utils;
+
+pub mod game;
 pub mod run;
 mod logging {
     use {
