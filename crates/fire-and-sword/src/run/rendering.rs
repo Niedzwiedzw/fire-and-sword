@@ -171,8 +171,8 @@ impl<'a> State<'a> {
                 strip_index_format: None,
                 front_face: wgpu::FrontFace::Ccw,
                 // WARN: huge perf hit
-                cull_mode: None,
-                // cull_mode: Some(wgpu::Face::Back),
+                // cull_mode: None,
+                cull_mode: Some(wgpu::Face::Back),
                 polygon_mode: wgpu::PolygonMode::Fill,
                 unclipped_depth: false,
                 conservative: false,
@@ -193,7 +193,7 @@ impl<'a> State<'a> {
             cache: None,
         });
 
-        let obj_model = Model::load_learn_wgpu_way("cube.obj").context("loading cube")?;
+        let obj_model = Model::load_learn_wgpu_way("scavenger.obj").context("loading scavenger")?;
 
         Ok(Self {
             surface,

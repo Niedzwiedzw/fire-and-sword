@@ -104,8 +104,8 @@ pub async fn run() -> Result<()> {
         handle: _handle,
     } = WindowHandle::new(WindowAttributes::default().with_title(concat!(clap::crate_name!(), " ", clap::crate_version!()))).await?;
     let mut game_state = GameState {
-        instances: (0..20)
-            .flat_map(|z| (0..20).map(move |x| (x, z)))
+        instances: (0..1)
+            .flat_map(|z| (0..1).map(move |x| (x, z)))
             .map(|(x, z)| Vec3::new(x as _, 0., z as _))
             .map(|v| v * 5.)
             .enumerate()
@@ -179,43 +179,46 @@ pub async fn run() -> Result<()> {
             AppEvent::Key(key, state) => {
                 keyboard_state.0.insert(key, state);
             }
-            AppEvent::Redraw => {
-                state.window.request_redraw();
-                state
-                    .render(&game_state)
-                    .await
-                    .context("rendering failed")
-                    .or_else(|reason| match reason {
-                        reason if format!("{reason:?}").contains("timeout") => {
-                            warn!("timeout: {reason:?}");
-                            Ok(())
-                        }
-                        other => Err(other),
-                    })?
-            }
+            AppEvent::Redraw => state
+                .render(&game_state)
+                .await
+                .context("rendering failed")
+                .or_else(|reason| match reason {
+                    reason if format!("{reason:?}").contains("timeout") => {
+                        warn!("timeout: {reason:?}");
+                        Ok(())
+                    }
+                    other => Err(other),
+                })?,
             AppEvent::Resize(physical_size) => {
                 state.resize(physical_size);
             }
             AppEvent::Exit => std::process::exit(0),
-            AppEvent::Tick => keyboard_state
-                .0
-                .iter()
-                .filter_map(|(k, v)| v.is_pressed().then_some(k))
-                .filter_map(|key| match key {
-                    KeyCode::KeyW | KeyCode::ArrowUp => Some(Vec3::Z),
-                    KeyCode::KeyS | KeyCode::ArrowDown => Some(-Vec3::Z),
-                    KeyCode::KeyA | KeyCode::ArrowLeft => Some(-Vec3::X),
-                    KeyCode::KeyD | KeyCode::ArrowRight => Some(Vec3::X),
-                    _ => None,
-                })
-                .fold(Vec3::ZERO, |acc, next| acc + next)
-                .pipe(|speed| direction_from_look_and_speed(game_state.camera.look(), speed))
-                .pipe(|delta| delta * 0.15)
-                .pipe(|delta| {
-                    game_state.camera.position_mut(|position| {
-                        *position += delta;
+            AppEvent::Tick => {
+                // inputs
+                keyboard_state
+                    .0
+                    .iter()
+                    .filter_map(|(k, v)| v.is_pressed().then_some(k))
+                    .filter_map(|key| match key {
+                        KeyCode::KeyW | KeyCode::ArrowUp => Some(Vec3::Z),
+                        KeyCode::KeyS | KeyCode::ArrowDown => Some(-Vec3::Z),
+                        KeyCode::KeyA | KeyCode::ArrowLeft => Some(-Vec3::X),
+                        KeyCode::KeyD | KeyCode::ArrowRight => Some(Vec3::X),
+                        _ => None,
                     })
-                }),
+                    .fold(Vec3::ZERO, |acc, next| acc + next)
+                    .pipe(|speed| direction_from_look_and_speed(game_state.camera.look(), speed))
+                    .pipe(|delta| delta * 0.15)
+                    .pipe(|delta| {
+                        game_state.camera.position_mut(|position| {
+                            *position += delta;
+                        })
+                    });
+
+                // render
+                state.window.request_redraw();
+            }
         }
     }
 

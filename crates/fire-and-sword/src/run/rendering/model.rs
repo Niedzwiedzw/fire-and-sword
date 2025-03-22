@@ -77,24 +77,34 @@ impl Model {
 
             materials.push(material)
         }
-        let materials = NonEmpty::from_vec(materials).context("empty meshes?")?;
+        // HACK
+        materials.push(load_texture(Path::new("assets/cube-diffuse.jpg")).map(|texture| MaterialPlugin::load("cube-diffuse.jpg", texture))?);
+        let materials = NonEmpty::from_vec(materials).context("empty materials?")?;
         let meshes = models
             .into_iter()
             .map(|m| {
                 let vertices = (0..m.mesh.positions.len() / 3)
                     .map(|i| {
-                        if m.mesh.normals.is_empty() {
+                        if m.mesh.texcoords.is_empty() {
                             ModelVertex {
-                                position: Vec4::new(m.mesh.positions[i * 3], m.mesh.positions[i * 3 + 1], m.mesh.positions[i * 3 + 2], 0.),
-                                tex_coords: Vec2::new(m.mesh.texcoords[i * 2], 1.0 - m.mesh.texcoords[i * 2 + 1]),
-                                normal: Vec4::new(0.0, 0.0, 0.0, 0.),
+                                position: Vec4::new(m.mesh.positions[i * 3], m.mesh.positions[i * 3 + 1], m.mesh.positions[i * 3 + 2], 0.0),
+                                tex_coords: Vec2::new(0.0, 0.0), // Default texture coordinates
+                                normal: if m.mesh.normals.is_empty() {
+                                    Vec4::new(0.0, 0.0, 0.0, 0.0)
+                                } else {
+                                    Vec4::new(m.mesh.normals[i * 3], m.mesh.normals[i * 3 + 1], m.mesh.normals[i * 3 + 2], 0.0)
+                                },
                                 padding: pad(()),
                             }
                         } else {
                             ModelVertex {
-                                position: Vec4::new(m.mesh.positions[i * 3], m.mesh.positions[i * 3 + 1], m.mesh.positions[i * 3 + 2], 0.),
+                                position: Vec4::new(m.mesh.positions[i * 3], m.mesh.positions[i * 3 + 1], m.mesh.positions[i * 3 + 2], 0.0),
                                 tex_coords: Vec2::new(m.mesh.texcoords[i * 2], 1.0 - m.mesh.texcoords[i * 2 + 1]),
-                                normal: Vec4::new(m.mesh.normals[i * 3], m.mesh.normals[i * 3 + 1], m.mesh.normals[i * 3 + 2], 0.),
+                                normal: if m.mesh.normals.is_empty() {
+                                    Vec4::new(0.0, 0.0, 0.0, 0.0)
+                                } else {
+                                    Vec4::new(m.mesh.normals[i * 3], m.mesh.normals[i * 3 + 1], m.mesh.normals[i * 3 + 2], 0.0)
+                                },
                                 padding: pad(()),
                             }
                         }
