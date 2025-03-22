@@ -1,5 +1,4 @@
 use {
-    super::VERTICES,
     crate::{
         cloned,
         game::GameState,
@@ -10,11 +9,10 @@ use {
     instance::InstancePlugin,
     itertools::Itertools,
     model::{material::MaterialPlugin, mesh::MeshPlugin, Model, RenderPassDrawModelExt},
-    shader_types::bytemuck::{self},
     std::{iter::once, ops::Range},
     tap::prelude::*,
     tracing::{instrument, trace},
-    wgpu::{util::DeviceExt, Color, CommandEncoder},
+    wgpu::{Color, CommandEncoder},
     wgpu_ext::{
         bind_group::HasBindGroup,
         global_context::{init_queue, queue},
@@ -45,7 +43,6 @@ pub struct State<'a> {
     pub size: winit::dpi::PhysicalSize<u32>,
     pub window: &'a dyn Window,
     pub render_pipeline: wgpu::RenderPipeline,
-    pub vertex_buffer: wgpu::Buffer,
     pub camera_plugin: CameraPlugin,
     pub instance_plugin: InstancePlugin,
     pub depth_texture: texture::Texture,
@@ -118,15 +115,6 @@ impl<'a> State<'a> {
         let depth_texture = texture::Texture::depth_texture((config.width, config.height), "depth texture");
         // building the pipeline
         let shader = unsafe { device().create_shader_module_spirv(&wgpu::include_spirv_raw!("../../../../shaders.spv")) };
-
-        // vertex pulling because i dont want to write the layout for a vertex
-        let vertex_buffer = {
-            device().create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("Vertex buffer"),
-                contents: bytemuck::cast_slice(VERTICES),
-                usage: wgpu::BufferUsages::STORAGE,
-            })
-        };
 
         let camera_plugin = CameraPlugin::new(camera);
         let instance_plugin = InstancePlugin::new(instances);
@@ -201,7 +189,6 @@ impl<'a> State<'a> {
             size,
             window,
             render_pipeline,
-            vertex_buffer,
             camera_plugin,
             instance_plugin,
             depth_texture,

@@ -7,7 +7,7 @@
 use spirv_std::num_traits::Float;
 use {
     glam::{Affine3A, Mat4, Vec4Swizzles},
-    shader_types::{config, model::ModelVertex, Instance, Vertex},
+    shader_types::{model::ModelVertex, Instance},
     spirv_std::{glam::Vec4, image::Image2d, spirv, Sampler},
 };
 

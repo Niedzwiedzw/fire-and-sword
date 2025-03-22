@@ -5,7 +5,7 @@ use {
     futures::{FutureExt, Stream, StreamExt},
     itertools::Itertools,
     rendering::camera::{Camera, SENSITIVITY},
-    shader_types::{glam::Quat, padding::pad, Instance, Vec2, Vec3, Vec4, Vertex},
+    shader_types::{glam::Quat, Instance, Vec2, Vec3},
     std::{collections::BTreeMap, future::ready, ops::Mul},
     tap::prelude::*,
     tokio::time::Instant,
@@ -24,37 +24,8 @@ mod config {
     pub const TICK_INTERVAL: tokio::time::Duration = tokio::time::Duration::from_micros(1_000_000 / (FRAMES_PER_SECOND as u64));
 }
 
-pub mod window;
-
 pub mod rendering;
-
-const VERTICES: &[Vertex] = &[
-    Vertex {
-        position: Vec4::new(-0.0868241, 0.49240386, 0.0, 1.),
-        tex_coords: Vec2::new(0.4131759, 0.00759614),
-        padding: pad(()),
-    }, // A
-    Vertex {
-        position: Vec4::new(-0.49513406, 0.06958647, 0.0, 1.),
-        tex_coords: Vec2::new(0.0048659444, 0.43041354),
-        padding: pad(()),
-    }, // B
-    Vertex {
-        position: Vec4::new(-0.21918549, -0.44939706, 0.0, 1.),
-        tex_coords: Vec2::new(0.28081453, 0.949397),
-        padding: pad(()),
-    }, // C
-    Vertex {
-        position: Vec4::new(0.35966998, -0.3473291, 0.0, 1.),
-        tex_coords: Vec2::new(0.85967, 0.84732914),
-        padding: pad(()),
-    }, // D
-    Vertex {
-        position: Vec4::new(0.44147372, 0.2347359, 0.0, 1.),
-        tex_coords: Vec2::new(0.9414737, 0.2652641),
-        padding: pad(()),
-    }, // E
-];
+pub mod window;
 
 fn direction_from_look_and_speed(look: Vec3, speed: Vec3) -> Vec3 {
     // Normalize the look vector to ensure it's a unit vector (forward direction)
