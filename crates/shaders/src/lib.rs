@@ -37,15 +37,14 @@ pub fn main_fs(
                 break;
             }
             let LightSource {
-                position: mut light_source,
+                position: light_source,
                 color: Color([r, g, b, _a]),
             } = light_sources[idx];
-            light_source = *camera * light_source;
 
             let light_color = Vec3::new(r, g, b);
 
             // AMBIENT
-            let ambient = light_color * 0.1;
+            let ambient = light_color * 0.0;
             lighting += ambient;
 
             // DIFFUSE
@@ -72,11 +71,11 @@ pub fn main_vs(
     #[spirv(position)] out_pos: &mut Vec4,
     output: &mut ModelVertex,
 ) {
-    let mut vertex = input[in_vertex_index as usize];
+    let vertex = input[in_vertex_index as usize];
     let instance = instances[in_instance_index as usize];
-    vertex.position = *camera * (instance.position.xyz() + Affine3A::from_quat(instance.rotation).transform_point3(vertex.position.xyz())).extend(1.);
-    vertex.normal = (Affine3A::from_quat(instance.rotation).transform_vector3(vertex.normal.xyz())).extend(0.);
+    // vertex.position = *camera * (instance.position.xyz() + Affine3A::from_quat(instance.rotation).transform_point3(vertex.position.xyz())).extend(1.);
+    // vertex.normal = (Affine3A::from_quat(instance.rotation).transform_vector3(vertex.normal.xyz())).extend(0.);
 
-    *out_pos = vertex.position;
+    *out_pos = *camera * (instance.position.xyz() + Affine3A::from_quat(instance.rotation).transform_point3(vertex.position.xyz())).extend(1.);
     *output = vertex;
 }
