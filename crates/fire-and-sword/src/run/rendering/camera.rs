@@ -28,6 +28,9 @@ impl Camera {
             size,
         }
     }
+    pub fn resize(&mut self, size: (f32, f32)) {
+        self.size = size
+    }
     pub fn look(&self) -> Vec3 {
         Vec3::new(self.yaw.cos() * self.pitch.cos(), self.pitch.sin(), self.yaw.sin() * self.pitch.cos()).normalize()
     }

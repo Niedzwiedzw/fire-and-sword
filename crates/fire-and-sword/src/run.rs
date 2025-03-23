@@ -14,7 +14,7 @@ use {
         Vec3,
         Vec4,
     },
-    std::{collections::BTreeMap, future::ready, ops::Mul},
+    std::{collections::BTreeMap, future::ready, iter::once, ops::Mul},
     tap::prelude::*,
     tokio::time::Instant,
     tracing::{info, instrument, warn},
@@ -75,6 +75,8 @@ pub enum AppEvent {
 #[derive(Default)]
 struct KeyboardState(BTreeMap<KeyCode, ElementState>);
 
+const LIGHT_POSITON: Vec4 = Vec4::new(20., 5., 20., 1.);
+
 #[instrument]
 pub async fn run() -> Result<()> {
     let WindowHandle {
@@ -84,16 +86,17 @@ pub async fn run() -> Result<()> {
     } = WindowHandle::new(WindowAttributes::default().with_title(concat!(clap::crate_name!(), " ", clap::crate_version!()))).await?;
     let mut game_state = GameState {
         light_sources: vec![LightSource {
-            position: Vec4::new(10., 1., 0., 1.),
+            position: LIGHT_POSITON,
             color: Color([1., 1., 1., 1.]),
         }],
-        instances: (0..10)
-            .flat_map(|z| (0..10).map(move |x| (x, z)))
+        instances: (0..20)
+            .flat_map(|z| (0..20).map(move |x| (x, z)))
             .map(|(x, z)| Vec3::new(x as _, 0., z as _))
             .map(|v| v * 5.)
+            .chain(once(LIGHT_POSITON.xyz()))
             .enumerate()
             .map(|(idx, position)| {
-                Quat::from_axis_angle(position.normalize_or(Vec3::Z), (idx as f32).mul(3.).to_radians()).pipe(|rotation| Instance {
+                Quat::from_axis_angle(position.normalize_or(Vec3::Z), (idx as f32).mul(7.).to_radians()).pipe(|rotation| Instance {
                     position: position.extend(1.),
                     rotation,
                 })
@@ -175,6 +178,9 @@ pub async fn run() -> Result<()> {
                 })?,
             AppEvent::Resize(physical_size) => {
                 state.resize(physical_size);
+                game_state
+                    .camera
+                    .resize(physical_size.pipe(|PhysicalSize { width, height }| (width as _, height as _)));
             }
             AppEvent::Exit => std::process::exit(0),
             AppEvent::Tick => {
@@ -199,9 +205,23 @@ pub async fn run() -> Result<()> {
                         })
                     });
                 // moving lights
-                game_state.light_sources.iter_mut().for_each(|light| {
-                    light.position = (Mat3::from_rotation_y(3.0f32.to_radians()) * light.position.xyz()).extend(1.);
-                });
+                game_state
+                    .instances
+                    .iter_mut()
+                    .enumerate()
+                    .for_each(|(idx, instance)| {
+                        instance.rotation = Quat::from_axis_angle(
+                            instance
+                                .position
+                                .xyz()
+                                .reflect(Vec3::Z)
+                                .normalize_or(Vec3::Z),
+                            1.0f32.to_radians() * (idx as f32 + 1.0 * 64.).to_radians().cos(),
+                        ) * Quat::from_axis_angle(
+                            instance.position.xyz().normalize_or(Vec3::Y),
+                            1.0f32.to_radians() * (idx as f32 + 1.0 * 34.).to_radians().sin(),
+                        ) * instance.rotation;
+                    });
 
                 // render
                 state.window.request_redraw();
