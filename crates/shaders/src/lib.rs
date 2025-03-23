@@ -13,7 +13,6 @@ use {
 
 #[spirv(fragment)]
 pub fn main_fs(
-    #[spirv(uniform, descriptor_set = 0, binding = 0)] camera: &Mat4,
     #[spirv(descriptor_set = 2, binding = 0)] image: &Image2d,
     #[spirv(descriptor_set = 2, binding = 1)] sampler: &Sampler,
     #[spirv(storage_buffer, descriptor_set = 4, binding = 0)] light_sources: &[LightSource],
@@ -25,7 +24,7 @@ pub fn main_fs(
     }: ModelVertex,
     output: &mut Vec4,
 ) {
-    let normal = normal.normalize();
+    let normal = normal.normalize_or_zero();
     let image_color = image.sample(*sampler, tex_coords);
     {
         let mut lighting = Vec3::new(0., 0., 0.);
@@ -44,15 +43,21 @@ pub fn main_fs(
             let light_color = Vec3::new(r, g, b);
 
             // AMBIENT
-            let ambient = light_color * 0.1;
+            let ambient = light_color * 0.05;
             lighting += ambient;
 
             // DIFFUSE
             let light_ray = pixel_position - light_source;
             let weaken = (1.0 / light_ray.length()).powf(0.2);
-            let diffuse_strength = (light_ray).xyz().dot(normal.xyz()).max(0.);
+            let diffuse_strength = (-light_ray).xyz().dot(normal.xyz()).max(0.);
             let diffuse = diffuse_strength * light_color * weaken;
-            lighting += diffuse * 0.05;
+            lighting += diffuse * 0.06;
+
+            // SPECULAR
+            let reflect_source = light_ray.xyz().reflect(normal.xyz()).normalize_or_zero();
+            let specular_strength = Vec3::new(0., 0., 1.).dot(reflect_source).max(0.).powf(256.);
+            let specular = specular_strength * light_color;
+            lighting += specular * 0.2;
 
             idx += 1;
         }
