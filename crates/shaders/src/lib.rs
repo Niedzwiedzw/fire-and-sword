@@ -16,6 +16,7 @@ pub mod lighting;
 
 #[spirv(fragment)]
 pub fn main_fs(
+    #[spirv(uniform, descriptor_set = 0, binding = 0)] camera: &Mat4,
     #[spirv(descriptor_set = 2, binding = 0)] image: &Image2d,
     #[spirv(descriptor_set = 2, binding = 1)] sampler: &Sampler,
     #[spirv(storage_buffer, descriptor_set = 4, binding = 0)] light_sources: &[LightSource],
@@ -32,8 +33,17 @@ pub fn main_fs(
             if idx == light_sources.len() {
                 break;
             }
-            let light_context = LightContext::new(model_vertex, light_sources[idx]);
-            light_context.apply_light(&mut lighting);
+            let light_source = light_sources[idx];
+            if model_vertex
+                .position
+                .xyz()
+                .distance_squared(light_source.position.xyz())
+                <= 200.
+            {
+                let light_context = LightContext::new(model_vertex, light_source, camera);
+                light_context.apply_light(&mut lighting);
+            }
+
             idx += 1;
         }
         *output = image_color * lighting.extend(1.);
