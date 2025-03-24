@@ -9,7 +9,7 @@ use {
     instance::InstancePlugin,
     itertools::Itertools,
     light_source::LightSourcePlugin,
-    model::{material::MaterialPlugin, mesh::MeshPlugin, Model, RenderPassDrawModelExt},
+    model::{load_gltf::Model, material::MaterialPlugin, mesh::MeshPlugin, RenderPassDrawModelExt},
     std::{iter::once, ops::Range},
     tap::prelude::*,
     tracing::{instrument, trace},
@@ -27,6 +27,7 @@ pub mod camera;
 pub mod instance;
 pub mod light_source;
 pub mod model;
+pub mod scene;
 pub mod texture;
 
 #[extension_traits::extension(pub trait RangeMapExt)]
@@ -194,7 +195,11 @@ impl<'a> State<'a> {
             cache: None,
         });
 
-        let obj_model = Model::load_learn_wgpu_way("cube.obj").context("loading cube")?;
+        let obj_model = gltf::import_slice(include_bytes!("../../../../assets/test-map-1.glb"))
+            .context("loading gltf map")
+            .and_then(|gltf| Model::load_all(&gltf).context("loading all models from gltf"))
+            .and_then(|map| map.context("map cannot be empty"))
+            .map(|map| map.head)?;
 
         Ok(Self {
             surface,
@@ -315,7 +320,7 @@ impl<'a> State<'a> {
                                     pass.set_bind_group(0, &self.camera_plugin.bind_group, &[]);
                                     pass.set_bind_group(3, &self.instance_plugin.bind_group, &[]);
                                     pass.set_bind_group(4, &self.light_source_plugin.bind_group, &[]);
-                                    pass.draw_mesh_instanced(self.obj_model.draw(|m| m.first()), 0..instances.len() as u32);
+                                    pass.draw_model_instanced(&self.obj_model, 0..instances.len() as u32);
                                 })
                                 .pipe(drop)
                                 .pipe(Ok)

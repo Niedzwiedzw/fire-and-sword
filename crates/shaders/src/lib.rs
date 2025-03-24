@@ -1,14 +1,12 @@
 #![cfg_attr(target_arch = "spirv", no_std)]
-// HACK(eddyb) can't easily see warnings otherwise from `spirv-builder` builds.
-// #![deny(warnings)]
+#![cfg_attr(not(debug_assertions), deny(warnings))]
 
-#[cfg(target_arch = "spirv")]
-#[allow(unused_imports)]
-use spirv_std::num_traits::Float;
+// #[cfg(target_arch = "spirv")]
+// use spirv_std::num_traits::Float as _;
 use {
     glam::{Affine3A, Mat4, Vec3, Vec4Swizzles},
     lighting::LightContext,
-    shader_types::{light_source::LightSource, model::ModelVertex, tap::prelude::*, Color, Instance},
+    shader_types::{light_source::LightSource, model::ModelVertex, Instance},
     spirv_std::{glam::Vec4, image::Image2d, spirv, Sampler},
 };
 

@@ -6,7 +6,7 @@ use {
     itertools::Itertools,
     rendering::camera::{Camera, SENSITIVITY},
     shader_types::{
-        glam::{Mat3, Quat, Vec4Swizzles},
+        glam::{Quat, Vec4Swizzles},
         light_source::LightSource,
         Color,
         Instance,
@@ -14,7 +14,7 @@ use {
         Vec3,
         Vec4,
     },
-    std::{collections::BTreeMap, future::ready, iter::once, ops::Mul},
+    std::{collections::BTreeMap, future::ready, ops::Mul},
     tap::prelude::*,
     tokio::time::Instant,
     tracing::{info, instrument, warn},
@@ -27,10 +27,7 @@ use {
     },
 };
 
-mod config {
-    pub const FRAMES_PER_SECOND: usize = 30;
-    pub const TICK_INTERVAL: tokio::time::Duration = tokio::time::Duration::from_micros(1_000_000 / (FRAMES_PER_SECOND as u64));
-}
+mod config;
 
 pub mod rendering;
 pub mod window;
@@ -89,11 +86,11 @@ pub async fn run() -> Result<()> {
             position: LIGHT_POSITON,
             color: Color([1., 1., 1., 1.]),
         }],
-        instances: (0..20)
-            .flat_map(|z| (0..20).map(move |x| (x, z)))
+        instances: (0..1)
+            .flat_map(|z| (0..1).map(move |x| (x, z)))
             .map(|(x, z)| Vec3::new(x as _, 0., z as _))
             .map(|v| v * 5.)
-            .chain(once(LIGHT_POSITON.xyz()))
+            // .chain(once(LIGHT_POSITON.xyz()))
             .enumerate()
             .map(|(idx, position)| {
                 Quat::from_axis_angle(position.normalize_or(Vec3::Z), (idx as f32).mul(7.).to_radians()).pipe(|rotation| Instance {
