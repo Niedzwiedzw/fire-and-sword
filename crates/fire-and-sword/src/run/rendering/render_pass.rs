@@ -68,7 +68,7 @@ impl InstanceSyncBuffer {
 
             let commit = std::mem::replace(&mut self.staging, Vec::with_capacity(current_len));
             self.commit
-                .write(0..self.staging.len() as _, move |data| data.copy_from_slice(&commit))
+                .write(0..commit.len() as _, move |data| data.copy_from_slice(&commit))
                 .await
                 .map(|_| Some((&self.bind_group, (0..current_len as u32))))
         }

@@ -58,14 +58,7 @@ pub struct State<'a> {
 }
 
 impl<'a> State<'a> {
-    pub async fn new(
-        window: &'a dyn Window,
-        GameState {
-            camera,
-            instances: _,
-            light_sources,
-        }: &GameState,
-    ) -> Result<Self> {
+    pub async fn new(window: &'a dyn Window, GameState { camera, scene, light_sources }: &GameState) -> Result<Self> {
         let size = window.surface_size();
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
             backends: wgpu::Backends::PRIMARY,
@@ -252,21 +245,17 @@ impl<'a> State<'a> {
             .await
             .with_context(|| format!("running on encoder: {label}"))
     }
-    pub async fn render_game_state(
-        &mut self,
-        GameState {
-            camera,
-            instances,
-            light_sources,
-        }: &GameState,
-    ) -> Result<()> {
+    pub async fn render_game_state(&mut self, GameState { camera, scene, light_sources }: &GameState) -> Result<()> {
         self.render_pass(|pass| {
             pass.set_camera(*camera);
-            instances
+            scene
+                .as_ref()
                 .iter()
-                .map(|i| WithInstance {
-                    instance: i.instance,
-                    inner: i.inner.as_ref(),
+                .map(|scene| scene.nodes.iter())
+                .flatten()
+                .map(|node| WithInstance {
+                    instance: Default::default(),
+                    inner: node.as_ref(),
                 })
                 .try_for_each(|node| pass.draw(&node.as_ref()))
         })

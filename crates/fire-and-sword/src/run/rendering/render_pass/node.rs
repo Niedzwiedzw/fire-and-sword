@@ -7,6 +7,7 @@ use {
         Instance,
     },
     tap::prelude::*,
+    tracing::trace,
 };
 
 #[extension_traits::extension(pub trait TransformInstanceExt)]
@@ -16,8 +17,8 @@ impl Instance {
             .to_scale_rotation_translation()
             .pipe(|(_scale, rot, trans)| {
                 self.pipe(|Self { position, rotation }| Self {
-                    position: (trans + position.xyz()).extend(0.),
-                    rotation: rot * rotation,
+                    position: (trans + position.xyz()).extend(1.),
+                    rotation: rotation * rot,
                 })
             })
     }
@@ -40,7 +41,8 @@ impl WithInstance<&WithTransform<&Node>> {
                                     instance: instance.transformed(parent_transform),
                                     inner: model,
                                 }
-                                .draw_me(pass),
+                                .draw_me(pass)
+                                .tap_ok_dbg(|_| trace!("drawing {model:?} at [{:?}] ({instance:?})", instance.transformed(parent_transform))),
                             },
                             None => Ok(()),
                         })

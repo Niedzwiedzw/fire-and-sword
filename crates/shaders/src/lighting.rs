@@ -50,9 +50,11 @@ impl LightContext {
                  light_source: _,
                  light_ray: _,
                  eye_direction: _,
-                 dampen,
+                 dampen: _,
              }| {
-                *light_buffer += light_color * 0.015 * dampen;
+                let light = light_color * 0.06;
+                // let light = light * dampen;
+                *light_buffer += light;
             },
         )
     }
@@ -73,7 +75,8 @@ impl LightContext {
                  eye_direction: _,
                  dampen,
              }| {
-                let diffuse_intensity = normal.xyz().dot(light_ray.normalize()).max(0.) * dampen;
+                let diffuse_intensity = normal.xyz().dot(light_ray.normalize()).max(0.);
+                // let diffuse_intensity = diffuse_intensity * dampen;
                 *light_buffer += diffuse_intensity * light_color;
             },
         )

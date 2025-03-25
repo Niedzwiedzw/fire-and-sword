@@ -12,6 +12,7 @@ use {
 
 pub type GltfImport = (gltf::Document, Vec<gltf::buffer::Data>, Vec<gltf::image::Data>);
 
+#[derive(Debug)]
 pub struct Model {
     pub primitives: NonEmpty<Primitive>,
 }

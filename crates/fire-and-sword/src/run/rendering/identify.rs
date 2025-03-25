@@ -32,7 +32,7 @@ pub struct WithId<T> {
 
 impl<T> std::fmt::Debug for WithId<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "WithId<{}, ({})>", std::any::type_name::<Self>(), self.id)
+        write!(f, "WithId<{}, ({})>", std::any::type_name::<T>(), self.id)
     }
 }
 

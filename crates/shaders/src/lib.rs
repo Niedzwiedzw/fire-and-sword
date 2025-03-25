@@ -1,5 +1,5 @@
 #![cfg_attr(target_arch = "spirv", no_std)]
-#![cfg_attr(not(debug_assertions), deny(warnings))]
+// #![cfg_attr(not(debug_assertions), deny(warnings))]
 
 // #[cfg(target_arch = "spirv")]
 // use spirv_std::num_traits::Float as _;
@@ -36,7 +36,7 @@ pub fn main_fs(
                 .position
                 .xyz()
                 .distance_squared(light_source.position.xyz())
-                <= 200.
+                <= 2000.
             {
                 let light_context = LightContext::new(model_vertex, light_source, camera);
                 light_context.apply_light(&mut lighting);

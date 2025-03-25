@@ -82,7 +82,7 @@ pub async fn run() -> Result<()> {
             position: LIGHT_POSITON,
             color: Color([1., 1., 1., 1.]),
         }],
-        instances: Default::default(),
+        scene: Default::default(),
         camera: Camera::new(
             Default::default(),
             window
@@ -100,12 +100,7 @@ pub async fn run() -> Result<()> {
         .and_then(|gltf| Scene::load_all(&gltf).context("loading all models from gltf"))
         .map(|map| map.head)
         .context("loading blender scene")?;
-    game_state
-        .instances
-        .push(scene.nodes.head.pipe(|node| WithInstance {
-            instance: Default::default(),
-            inner: node,
-        }));
+    game_state.scene = Some(scene);
 
     let mut keyboard_state = KeyboardState::default();
 
