@@ -10,6 +10,7 @@ use {
     itertools::Itertools,
     light_source::LightSourcePlugin,
     model::{load_gltf::Model, material::MaterialPlugin, mesh::MeshPlugin, RenderPassDrawModelExt},
+    scene::Scene,
     std::{iter::once, ops::Range},
     tap::prelude::*,
     tracing::{instrument, trace},
@@ -50,7 +51,7 @@ pub struct State<'a> {
     pub instance_plugin: InstancePlugin,
     pub light_source_plugin: LightSourcePlugin,
     pub depth_texture: texture::Texture,
-    pub obj_model: Model,
+    pub scene: Scene,
 }
 
 impl<'a> State<'a> {
@@ -195,11 +196,11 @@ impl<'a> State<'a> {
             cache: None,
         });
 
-        let obj_model = gltf::import_slice(include_bytes!("../../../../assets/test-map-1.glb"))
+        let scene = gltf::import_slice(include_bytes!("../../../../assets/test-map-1.glb"))
             .context("loading gltf map")
-            .and_then(|gltf| Model::load_all(&gltf).context("loading all models from gltf"))
-            .and_then(|map| map.context("map cannot be empty"))
-            .map(|map| map.head)?;
+            .and_then(|gltf| Scene::load_all(&gltf).context("loading all models from gltf"))
+            .map(|map| map.head)
+            .context("loading blender scene")?;
 
         Ok(Self {
             surface,
@@ -211,7 +212,7 @@ impl<'a> State<'a> {
             instance_plugin,
             light_source_plugin,
             depth_texture,
-            obj_model,
+            scene,
         })
     }
 
@@ -320,7 +321,7 @@ impl<'a> State<'a> {
                                     pass.set_bind_group(0, &self.camera_plugin.bind_group, &[]);
                                     pass.set_bind_group(3, &self.instance_plugin.bind_group, &[]);
                                     pass.set_bind_group(4, &self.light_source_plugin.bind_group, &[]);
-                                    pass.draw_model_instanced(&self.obj_model, 0..instances.len() as u32);
+                                    pass.draw_scene_instanced(&self.scene, 0..instances.len() as u32);
                                 })
                                 .pipe(drop)
                                 .pipe(Ok)
