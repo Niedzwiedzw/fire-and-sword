@@ -2,7 +2,10 @@ use {
     super::AsyncBufferWriteExt,
     crate::run::rendering::wgpu_ext::global_context::device,
     anyhow::{Context, Result},
-    shader_types::bytemuck::{self, AnyBitPattern, NoUninit},
+    shader_types::{
+        bytemuck::{self, AnyBitPattern, NoUninit},
+        Zeroable,
+    },
     std::{any::type_name, marker::PhantomData},
     tap::prelude::*,
     wgpu::{util::DeviceExt, WasmNotSend},
@@ -33,6 +36,15 @@ impl<T> StorageBuffer<T>
 where
     T: NoUninit,
 {
+    pub fn new_empty(size: usize) -> Self
+    where
+        T: Zeroable,
+    {
+        #[allow(deprecated)]
+        Self::new_init(&vec![Zeroable::zeroed(); size])
+    }
+    #[deprecated = "only useful for static buffers (meshes etc)"]
+    /// WARN: buffers cannot be empty
     pub fn new_init(init: &[T]) -> Self {
         device()
             .create_buffer_init(&wgpu::util::BufferInitDescriptor {

@@ -44,6 +44,8 @@ bind_group_layout!(
 impl MeshPlugin {
     pub fn load_mesh(vertices: &[ModelVertex], indices: &[u32]) -> LoadedMesh {
         Self::bind_group_layout().pipe(|layout| {
+            // it is static
+            #[allow(deprecated)]
             StorageBuffer::new_init(vertices).pipe(|vertex_buffer| {
                 device()
                     .create_bind_group(&wgpu::BindGroupDescriptor {

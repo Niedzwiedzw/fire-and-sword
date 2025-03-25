@@ -42,10 +42,13 @@ impl AsMut<Vec<Instance>> for InstanceSyncBuffer {
 }
 
 impl InstanceSyncBuffer {
-    pub fn new(init: Vec<Instance>) -> Self {
-        let commit = StorageBuffer::new_init(&[]);
+    pub fn new_init(size: usize, init: Vec<Instance>) -> Self {
+        Self::new(size).tap_mut(|b| b.staging.extend(init))
+    }
+    pub fn new(size: usize) -> Self {
+        let commit = StorageBuffer::new_empty(size);
         Self {
-            staging: init,
+            staging: Default::default(),
             bind_group: device().create_bind_group(&wgpu::BindGroupDescriptor {
                 label: struct_label!(),
                 layout: Self::bind_group_layout(),

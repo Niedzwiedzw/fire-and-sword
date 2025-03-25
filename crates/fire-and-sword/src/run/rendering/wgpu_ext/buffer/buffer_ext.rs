@@ -4,7 +4,7 @@ use {
     futures::channel::oneshot,
     shader_types::bytemuck::{self, AnyBitPattern, NoUninit},
     tap::prelude::*,
-    tracing::{error, trace},
+    tracing::{error, trace, warn},
     wgpu::{MapMode, WasmNotSend},
 };
 
@@ -16,7 +16,12 @@ impl wgpu::Buffer {
         F: FnOnce(&mut [T]) + WasmNotSend + 'static,
     {
         let bounds = bounds.map_range(|address| address * (core::mem::size_of::<T>() as u64));
+        if bounds.is_empty() {
+            warn!("writing to an empty slice [{bounds:?}] is a noop");
+            return Ok(());
+        }
         let (tx, rx) = oneshot::channel();
+
         self.slice(bounds.clone()).pipe(|slice| {
             self.clone().pipe(|slice_access| {
                 slice.map_async(MapMode::Write, move |w| {
