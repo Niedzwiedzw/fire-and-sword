@@ -86,20 +86,19 @@ impl Primitive {
                                                 .nth(info.texture().index())
                                                 .with_context(|| format!("no texture at index [{}]", info.texture().index()))
                                                 .and_then(|texture| {
-                                                    document
-                                                        .images()
-                                                        .nth(texture.source().index())
-                                                        .with_context(|| format!("no image at index [{}]", texture.index()))
-                                                        .and_then(|image| match image.source() {
-                                                            Source::View { view, mime_type: _ } => image_data
-                                                                .get(view.index())
-                                                                .with_context(|| format!("no image at index {}", view.index()))
-                                                                .and_then(|image| Texture::from_bytes(&image.pixels, texture.name().unwrap_or("UNKNOWN"))),
-                                                            Source::Uri { uri, mime_type } => {
-                                                                todo!("Source::Uri {{ uri: {uri}, mime_type: {mime_type:?} }}")
-                                                            }
-                                                        })
-                                                        .map(|data| MaterialPlugin::load(texture.name().unwrap_or("UNKNOWN"), data))
+                                                    match texture.source().source() {
+                                                        Source::View { view, mime_type: _ } => {
+                                                            let start = view.offset();
+                                                            let end = view.offset() + view.length();
+                                                            buffer_data
+                                                                .get(view.buffer().index())
+                                                                .context("bad index")
+                                                                .and_then(|data| data.get(start..end).context("bad data slice"))
+                                                                .and_then(|data| Texture::from_bytes(data, texture.name().unwrap_or("UNKNOWN")))
+                                                        }
+                                                        Source::Uri { uri: _, mime_type: _ } => anyhow::bail!("Source::Uri {{ uri: _, mime_type: _ }}"),
+                                                    }
+                                                    .map(|data| MaterialPlugin::load(texture.name().unwrap_or("UNKNOWN"), data))
                                                 })
                                         })
                                         .unwrap_or_else(|| {

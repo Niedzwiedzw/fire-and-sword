@@ -95,7 +95,7 @@ pub async fn run() -> Result<()> {
         .await
         .context("creating renderer state")?;
 
-    let scene = gltf::import_slice(include_bytes!("../../../assets/test-map-1.glb"))
+    let scene = gltf::import_slice(include_bytes!("../../../assets/AntiqueCamera.glb"))
         .context("loading gltf map")
         .and_then(|gltf| Scene::load_all(&gltf).context("loading all models from gltf"))
         .map(|map| map.head)

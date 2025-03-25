@@ -1,9 +1,5 @@
 use {
-    crate::run::rendering::{
-        camera::Camera,
-        render_pass::WithInstance,
-        scene::{Node, Scene, WithTransform},
-    },
+    crate::run::rendering::{camera::Camera, scene::Scene},
     shader_types::light_source::LightSource,
 };
 
