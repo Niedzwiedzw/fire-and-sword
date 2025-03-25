@@ -3,21 +3,16 @@ use {
     crate::game::GameState,
     anyhow::{Context, Result},
     futures::{FutureExt, Stream, StreamExt},
-    itertools::Itertools,
-    rendering::camera::{Camera, SENSITIVITY},
-    shader_types::{
-        glam::{Quat, Vec4Swizzles},
-        light_source::LightSource,
-        Color,
-        Instance,
-        Vec2,
-        Vec3,
-        Vec4,
+    rendering::{
+        camera::{Camera, SENSITIVITY},
+        render_pass::WithInstance,
+        scene::Scene,
     },
-    std::{collections::BTreeMap, future::ready, ops::Mul},
+    shader_types::{light_source::LightSource, Color, Vec2, Vec3, Vec4},
+    std::{collections::BTreeMap, future::ready},
     tap::prelude::*,
     tokio::time::Instant,
-    tracing::{info, instrument, warn},
+    tracing::{instrument, warn},
     window::WindowingEvent,
     winit::{
         dpi::PhysicalSize,
@@ -81,25 +76,13 @@ pub async fn run() -> Result<()> {
         events,
         handle: _handle,
     } = WindowHandle::new(WindowAttributes::default().with_title(concat!(clap::crate_name!(), " ", clap::crate_version!()))).await?;
+
     let mut game_state = GameState {
         light_sources: vec![LightSource {
             position: LIGHT_POSITON,
             color: Color([1., 1., 1., 1.]),
         }],
-        instances: (0..1)
-            .flat_map(|z| (0..1).map(move |x| (x, z)))
-            .map(|(x, z)| Vec3::new(x as _, 0., z as _))
-            .map(|v| v * 5.)
-            // .chain(once(LIGHT_POSITON.xyz()))
-            .enumerate()
-            .map(|(idx, position)| {
-                Quat::from_axis_angle(position.normalize_or(Vec3::Z), (idx as f32).mul(7.).to_radians()).pipe(|rotation| Instance {
-                    position: position.extend(1.),
-                    rotation,
-                })
-            })
-            .inspect(|instance| info!("{:?}", instance.position))
-            .collect_vec(),
+        instances: Default::default(),
         camera: Camera::new(
             Default::default(),
             window
@@ -111,6 +94,18 @@ pub async fn run() -> Result<()> {
     let mut state = rendering::State::new(&*window, &game_state)
         .await
         .context("creating renderer state")?;
+
+    let scene = gltf::import_slice(include_bytes!("../../../assets/test-map-1.glb"))
+        .context("loading gltf map")
+        .and_then(|gltf| Scene::load_all(&gltf).context("loading all models from gltf"))
+        .map(|map| map.head)
+        .context("loading blender scene")?;
+    game_state
+        .instances
+        .push(scene.nodes.head.pipe(|node| WithInstance {
+            instance: Default::default(),
+            inner: node,
+        }));
 
     let mut keyboard_state = KeyboardState::default();
 
@@ -144,7 +139,7 @@ pub async fn run() -> Result<()> {
                 .pipe(futures::stream::iter)
                 .flatten_unordered(8)
         });
-    state.render(&game_state).await?;
+    state.render_game_state(&game_state).await?;
     while let Some(event) = events.next().await {
         match event {
             AppEvent::MouseMoved(by) => {
@@ -163,7 +158,7 @@ pub async fn run() -> Result<()> {
                 keyboard_state.0.insert(key, state);
             }
             AppEvent::Redraw => state
-                .render(&game_state)
+                .render_game_state(&game_state)
                 .await
                 .context("rendering failed")
                 .or_else(|reason| match reason {
@@ -200,24 +195,6 @@ pub async fn run() -> Result<()> {
                         game_state.camera.position_mut(|position| {
                             *position += delta;
                         })
-                    });
-                // moving lights
-                game_state
-                    .instances
-                    .iter_mut()
-                    .enumerate()
-                    .for_each(|(idx, instance)| {
-                        instance.rotation = Quat::from_axis_angle(
-                            instance
-                                .position
-                                .xyz()
-                                .reflect(Vec3::Z)
-                                .normalize_or(Vec3::Z),
-                            1.0f32.to_radians() * (idx as f32 + 1.0 * 64.).to_radians().cos(),
-                        ) * Quat::from_axis_angle(
-                            instance.position.xyz().normalize_or(Vec3::Y),
-                            1.0f32.to_radians() * (idx as f32 + 1.0 * 34.).to_radians().sin(),
-                        ) * instance.rotation;
                     });
 
                 // render

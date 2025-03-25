@@ -1,6 +1,6 @@
 use {
     super::{material::MaterialPlugin, mesh::MeshPlugin, Primitive},
-    crate::run::rendering::texture::Texture,
+    crate::run::rendering::{identify::WithId, texture::Texture},
     anyhow::{Context, Result},
     gltf::image::Source,
     image::{GenericImage, GenericImageView, Rgba},
@@ -120,7 +120,13 @@ impl Primitive {
                                         })
                                 })
                             })
-                            .map(|material| Primitive { mesh, material })
+                            .map(
+                                #[allow(deprecated)]
+                                {
+                                    |material| (WithId::register(mesh), WithId::register(material))
+                                },
+                            )
+                            .map(|(mesh, material)| Primitive { mesh, material })
                     })
             })
     }

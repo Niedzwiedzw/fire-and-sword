@@ -29,3 +29,4 @@ nutype = "0.6.1"
 nonempty = "0.11.0"
 gltf = { version = "1.4.1", features = ["names"] }
 serde_json = "1.0.140"
+derivative = "2.2.0"

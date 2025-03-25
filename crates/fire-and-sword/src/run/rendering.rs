@@ -1,17 +1,17 @@
 use {
     crate::{
-        cloned,
         game::GameState,
         run::rendering::wgpu_ext::global_context::{device, init_device},
     },
     anyhow::{Context, Result},
     camera::CameraPlugin,
+    futures::TryFutureExt,
     instance::InstancePlugin,
     itertools::Itertools,
     light_source::LightSourcePlugin,
-    model::{load_gltf::Model, material::MaterialPlugin, mesh::MeshPlugin, RenderPassDrawModelExt},
-    scene::Scene,
-    std::{iter::once, ops::Range},
+    model::{material::MaterialPlugin, mesh::MeshPlugin},
+    render_pass::WithInstance,
+    std::{future::ready, iter::once, ops::Range},
     tap::prelude::*,
     tracing::{instrument, trace},
     wgpu::{Color, CommandEncoder},
@@ -24,12 +24,16 @@ use {
 
 pub mod wgpu_ext;
 
+pub mod identify;
+
 pub mod camera;
 pub mod instance;
 pub mod light_source;
 pub mod model;
 pub mod scene;
 pub mod texture;
+
+pub mod render_pass;
 
 #[extension_traits::extension(pub trait RangeMapExt)]
 impl<T> Range<T> {
@@ -48,10 +52,9 @@ pub struct State<'a> {
     pub window: &'a dyn Window,
     pub render_pipeline: wgpu::RenderPipeline,
     pub camera_plugin: CameraPlugin,
-    pub instance_plugin: InstancePlugin,
     pub light_source_plugin: LightSourcePlugin,
     pub depth_texture: texture::Texture,
-    pub scene: Scene,
+    pub pass_buffer: self::render_pass::PassBuffer,
 }
 
 impl<'a> State<'a> {
@@ -59,7 +62,7 @@ impl<'a> State<'a> {
         window: &'a dyn Window,
         GameState {
             camera,
-            instances,
+            instances: _,
             light_sources,
         }: &GameState,
     ) -> Result<Self> {
@@ -129,7 +132,7 @@ impl<'a> State<'a> {
         let shader = unsafe { device().create_shader_module_spirv(&wgpu::include_spirv_raw!("../../../../shaders.spv")) };
 
         let camera_plugin = CameraPlugin::new(camera);
-        let instance_plugin = InstancePlugin::new(instances);
+        // let instance_plugin = InstancePlugin::new(instances);
         let light_source_plugin = LightSourcePlugin::new(light_sources);
 
         let render_pipeline_layout = device().create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -196,12 +199,6 @@ impl<'a> State<'a> {
             cache: None,
         });
 
-        let scene = gltf::import_slice(include_bytes!("../../../../assets/test-map-1.glb"))
-            .context("loading gltf map")
-            .and_then(|gltf| Scene::load_all(&gltf).context("loading all models from gltf"))
-            .map(|map| map.head)
-            .context("loading blender scene")?;
-
         Ok(Self {
             surface,
             config,
@@ -209,10 +206,9 @@ impl<'a> State<'a> {
             window,
             render_pipeline,
             camera_plugin,
-            instance_plugin,
             light_source_plugin,
             depth_texture,
-            scene,
+            pass_buffer: Default::default(),
         })
     }
 
@@ -239,8 +235,24 @@ impl<'a> State<'a> {
             .with_context(|| format!("running on encoder: {label}"))
     }
 
-    #[instrument(skip_all)]
-    pub async fn render(
+    pub async fn with_command_encoder_async<'task, F>(label: &str, with_command_encoder: F) -> Result<()>
+    where
+        F: AsyncFnOnce(&mut CommandEncoder) -> Result<()> + 'task,
+    {
+        device()
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some(label) })
+            .pipe(|mut encoder| async move {
+                with_command_encoder(&mut encoder)
+                    .await
+                    .with_context(|| format!("running operation [{label}] with encoder"))
+                    .map(|_| {
+                        queue().submit(once(encoder.finish()));
+                    })
+            })
+            .await
+            .with_context(|| format!("running on encoder: {label}"))
+    }
+    pub async fn render_game_state(
         &mut self,
         GameState {
             camera,
@@ -248,47 +260,74 @@ impl<'a> State<'a> {
             light_sources,
         }: &GameState,
     ) -> Result<()> {
+        self.render_pass(|pass| {
+            pass.set_camera(*camera);
+            instances
+                .iter()
+                .map(|i| WithInstance {
+                    instance: i.instance,
+                    inner: i.inner.as_ref(),
+                })
+                .try_for_each(|node| pass.draw(&node.as_ref()))
+        })
+        .await
+        .context("rendering full game state")
+    }
+    #[instrument(skip_all)]
+    pub async fn render_pass<F>(
+        &mut self,
+        with_render_pass: F,
+        // GameState {
+        //     camera,
+        //     instances,
+        //     light_sources,
+        // }: &GameState,
+    ) -> Result<()>
+    where
+        F: FnOnce(&mut self::render_pass::RenderPass<'_, '_>) -> Result<()>,
+    {
         trace!("flushing camera");
         // FLUSH CAMERA
-        let camera = camera.get_view_projection();
-        self.camera_plugin
-            .buffer
-            .write(0..1u64, move |buf| {
-                buf[0] = camera;
-            })
-            .await
-            .context("writing camera")?;
-        self.instance_plugin
-            .buffer
-            .write(0..(instances.len() as _), {
-                cloned![instances];
-                move |current| {
-                    current.copy_from_slice(&instances);
-                }
-            })
-            .await
-            .context("updating instances")?;
+        // let camera = camera.get_view_projection();
+        // self.camera_plugin
+        //     .buffer
+        //     .write(0..1u64, move |buf| {
+        //         buf[0] = camera;
+        //     })
+        //     .await
+        //     .context("writing camera")?;
+        // self.instance_plugin
+        //     .buffer
+        //     .write(0..(instances.len() as _), {
+        //         cloned![instances];
+        //         move |current| {
+        //             current.copy_from_slice(&instances);
+        //         }
+        //     })
+        //     .await
+        //     .context("updating instances")?;
 
-        self.light_source_plugin
-            .buffer
-            .write(0..(light_sources.len() as _), {
-                cloned![light_sources];
-                move |current| {
-                    current.copy_from_slice(&light_sources);
-                }
-            })
-            .await
-            .context("updating instances")?;
+        // self.light_source_plugin
+        //     .buffer
+        //     .write(0..(light_sources.len() as _), {
+        //         cloned![light_sources];
+        //         move |current| {
+        //             current.copy_from_slice(&light_sources);
+        //         }
+        //     })
+        //     .await
+        //     .context("updating instances")?;
         trace!("writing to surface");
         self.surface
             .get_current_texture()
             .context("getting current texture")
-            .and_then(|output| {
+            .pipe(ready)
+            .and_then(async |output| {
                 output
                     .texture
                     .create_view(&wgpu::TextureViewDescriptor::default())
-                    .pipe(|texture_view| {
-                        Self::with_command_encoder("rendering_to_texture", |encoder| {
+                    .pipe(|texture_view| async move {
+                        Self::with_command_encoder_async("rendering_to_texture", async |encoder| {
                             encoder
                                 .begin_render_pass(&wgpu::RenderPassDescriptor {
                                     label: Some("render pass"),
@@ -319,15 +358,27 @@ impl<'a> State<'a> {
                                 .tap_mut(|pass| {
                                     pass.set_pipeline(&self.render_pipeline);
                                     pass.set_bind_group(0, &self.camera_plugin.bind_group, &[]);
-                                    pass.set_bind_group(3, &self.instance_plugin.bind_group, &[]);
+                                    // pass.set_bind_group(3, &self.instance_plugin.bind_group, &[]);
                                     pass.set_bind_group(4, &self.light_source_plugin.bind_group, &[]);
-                                    pass.draw_scene_instanced(&self.scene, 0..instances.len() as u32);
+                                    // pass.draw_scene_instanced(&self.scene, 0..instances.len() as u32);
                                 })
-                                .pipe(drop)
-                                .pipe(Ok)
+                                .pipe_ref_mut(|pass| self::render_pass::RenderPass {
+                                    camera_plugin: &mut self.camera_plugin,
+                                    camera: None,
+                                    buffer: &mut self.pass_buffer,
+                                    pass,
+                                })
+                                .pipe(|mut pass| with_render_pass(&mut pass).map(|_| pass))
+                                .pipe(ready)
+                                .and_then(|pass| pass.finish())
+                                .await
+                                .context("finishing up render pass")
                         })
+                        .await
                     })
+                    .await
                     .map(|_| output.present())
             })
+            .await
     }
 }
